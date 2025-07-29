@@ -2,237 +2,227 @@
 
 import type React from "react"
 
-import { useState, useEffect } from "react"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Label } from "@/components/ui/label"
-import { Input } from "@/components/ui/input"
+import { useState } from "react"
 import { Button } from "@/components/ui/button"
-import { Table, TableHeader, TableRow, TableHead, TableBody, TableCell } from "@/components/ui/table"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { Textarea } from "@/components/ui/textarea"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { useProducts } from "@/hooks/use-products"
 import { useToast } from "@/hooks/use-toast"
-import { createClient } from "@/lib/supabase"
 import { LoadingSpinner } from "./loading-spinner"
-import { ExportButton } from "./export-button"
-
-interface Producto {
-  id: string
-  nombre: string
-  precio: number
-  stock: number
-  created_at: string
-}
 
 export function Stock() {
-  const supabase = createClient()
+  const { products, addProduct, updateProduct, loading, error } = useProducts()
   const { toast } = useToast()
 
-  const [nombre, setNombre] = useState("")
-  const [precio, setPrecio] = useState<number>(0)
-  const [stock, setStock] = useState<number>(0)
-  const [productos, setProductos] = useState<Producto[]>([])
-  const [loading, setLoading] = useState(true)
-  const [submitting, setSubmitting] = useState(false)
+  const [name, setName] = useState("")
+  const [description, setDescription] = useState("")
+  const [price, setPrice] = useState("")
+  const [stock, setStock] = useState("")
+  const [editingProductId, setEditingProductId] = useState<string | null>(null)
 
-  useEffect(() => {
-    fetchProductos()
-  }, [])
-
-  const fetchProductos = async () => {
-    setLoading(true)
-    const { data, error } = await supabase.from("productos").select("*").order("nombre", { ascending: true })
-
-    if (error) {
-      toast({
-        title: "Error",
-        description: `Error al cargar productos: ${error.message}`,
-        variant: "destructive",
-      })
-    } else {
-      setProductos(data || [])
-    }
-    setLoading(false)
+  const handleEdit = (product: (typeof products)[0]) => {
+    setEditingProductId(product.id)
+    setName(product.name)
+    setDescription(product.description || "")
+    setPrice(product.price.toString())
+    setStock(product.stock.toString())
   }
 
-  const handleAddProducto = async (e: React.FormEvent) => {
+  const handleCancelEdit = () => {
+    setEditingProductId(null)
+    setName("")
+    setDescription("")
+    setPrice("")
+    setStock("")
+  }
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    setSubmitting(true)
-    const { data, error } = await supabase.from("productos").insert({
-      nombre,
-      precio,
-      stock,
-    })
-
-    if (error) {
+    if (!name || !price || !stock) {
       toast({
         title: "Error",
-        description: `Error al agregar producto: ${error.message}`,
+        description: "Por favor, completa todos los campos requeridos.",
         variant: "destructive",
       })
-    } else {
-      toast({
-        title: "Éxito",
-        description: "Producto agregado correctamente.",
-        variant: "default",
-      })
-      // Clear form and refetch
-      setNombre("")
-      setPrecio(0)
-      setStock(0)
-      fetchProductos()
+      return
     }
-    setSubmitting(false)
-  }
 
-  const handleUpdateStock = async (id: string, newStock: number) => {
-    setLoading(true)
-    const { error } = await supabase.from("productos").update({ stock: newStock }).eq("id", id)
+    const parsedPrice = Number.parseFloat(price)
+    const parsedStock = Number.parseInt(stock)
 
-    if (error) {
+    if (isNaN(parsedPrice) || parsedPrice <= 0) {
       toast({
         title: "Error",
-        description: `Error al actualizar stock: ${error.message}`,
+        description: "El precio debe ser un número positivo.",
         variant: "destructive",
       })
-    } else {
-      toast({
-        title: "Éxito",
-        description: "Stock actualizado correctamente.",
-        variant: "default",
-      })
-      fetchProductos() // Re-fetch to get the latest data
+      return
     }
-    setLoading(false)
-  }
-
-  const handleDeleteProducto = async (id: string) => {
-    if (!confirm("¿Estás seguro de que quieres eliminar este producto?")) return
-
-    setLoading(true)
-    const { error } = await supabase.from("productos").delete().eq("id", id)
-    if (error) {
+    if (isNaN(parsedStock) || parsedStock < 0) {
       toast({
         title: "Error",
-        description: `Error al eliminar producto: ${error.message}`,
+        description: "El stock debe ser un número entero no negativo.",
         variant: "destructive",
       })
-    } else {
-      toast({
-        title: "Éxito",
-        description: "Producto eliminado correctamente.",
-        variant: "default",
-      })
-      fetchProductos()
+      return
     }
-    setLoading(false)
-  }
 
-  const exportHeaders = [
-    { key: "nombre", label: "Nombre" },
-    { key: "precio", label: "Precio" },
-    { key: "stock", label: "Stock" },
-  ]
+    try {
+      if (editingProductId) {
+        await updateProduct(editingProductId, {
+          name,
+          description: description || null,
+          price: parsedPrice,
+          stock: parsedStock,
+        })
+        toast({
+          title: "Producto actualizado",
+          description: "El producto se ha actualizado exitosamente.",
+        })
+      } else {
+        await addProduct({
+          name,
+          description: description || null,
+          price: parsedPrice,
+          stock: parsedStock,
+        })
+        toast({
+          title: "Producto registrado",
+          description: "El producto se ha registrado exitosamente.",
+        })
+      }
+      handleCancelEdit() // Clear form and exit edit mode
+    } catch (err: any) {
+      toast({
+        title: `Error al ${editingProductId ? "actualizar" : "registrar"} producto`,
+        description: err.message || "Ocurrió un error inesperado.",
+        variant: "destructive",
+      })
+    }
+  }
 
   if (loading) {
     return (
-      <div className="flex justify-center items-center h-64">
+      <div className="flex items-center justify-center p-8">
         <LoadingSpinner />
+        <p className="ml-2">Cargando stock...</p>
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="p-8 text-red-500">
+        <p>Error al cargar stock: {error.message}</p>
       </div>
     )
   }
 
   return (
-    <div className="space-y-6">
-      <Card>
-        <CardHeader>
-          <CardTitle>Registrar Nuevo Producto</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <form onSubmit={handleAddProducto} className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="nombre-producto">Nombre</Label>
-              <Input
-                id="nombre-producto"
-                value={nombre}
-                onChange={(e) => setNombre(e.target.value)}
-                placeholder="Nombre del producto"
-                required
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="precio-producto">Precio</Label>
-              <Input
-                id="precio-producto"
-                type="number"
-                step="0.01"
-                value={precio}
-                onChange={(e) => setPrecio(Number.parseFloat(e.target.value) || 0)}
-                placeholder="0.00"
-                required
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="stock-producto">Stock Inicial</Label>
-              <Input
-                id="stock-producto"
-                type="number"
-                value={stock}
-                onChange={(e) => setStock(Number.parseInt(e.target.value) || 0)}
-                placeholder="0"
-                required
-              />
-            </div>
-            <Button type="submit" className="md:col-span-3" disabled={submitting}>
-              {submitting ? <LoadingSpinner className="mr-2" /> : null}
-              Agregar Producto
+    <div className="grid gap-6">
+      <form onSubmit={handleSubmit} className="grid gap-4 rounded-lg border p-4">
+        <h3 className="text-lg font-semibold">{editingProductId ? "Editar Producto" : "Registrar Nuevo Producto"}</h3>
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+          <div className="space-y-2">
+            <Label htmlFor="name">Nombre del Producto</Label>
+            <Input
+              id="name"
+              placeholder="Nombre del producto"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              required
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="price">Precio</Label>
+            <Input
+              id="price"
+              type="number"
+              step="0.01"
+              placeholder="0.00"
+              value={price}
+              onChange={(e) => setPrice(e.target.value)}
+              required
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="stock">Stock</Label>
+            <Input
+              id="stock"
+              type="number"
+              min="0"
+              placeholder="0"
+              value={stock}
+              onChange={(e) => setStock(e.target.value)}
+              required
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="description">Descripción (opcional)</Label>
+            <Textarea
+              id="description"
+              placeholder="Descripción del producto"
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+            />
+          </div>
+        </div>
+        <div className="flex gap-2">
+          <Button type="submit" className="w-full md:w-auto">
+            {editingProductId ? "Actualizar Producto" : "Registrar Producto"}
+          </Button>
+          {editingProductId && (
+            <Button
+              type="button"
+              variant="outline"
+              onClick={handleCancelEdit}
+              className="w-full md:w-auto bg-transparent"
+            >
+              Cancelar
             </Button>
-          </form>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-          <CardTitle className="text-2xl font-bold">Listado de Productos en Stock</CardTitle>
-          <ExportButton data={productos} filename="stock_productos" headers={exportHeaders} />
-        </CardHeader>
-        <CardContent>
-          {productos.length === 0 ? (
-            <p className="text-center text-muted-foreground">No hay productos registrados aún.</p>
-          ) : (
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Nombre</TableHead>
-                    <TableHead>Precio</TableHead>
-                    <TableHead>Stock</TableHead>
-                    <TableHead className="text-center">Acciones</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {productos.map((producto) => (
-                    <TableRow key={producto.id}>
-                      <TableCell>{producto.nombre}</TableCell>
-                      <TableCell>${producto.precio.toFixed(2)}</TableCell>
-                      <TableCell>
-                        <Input
-                          type="number"
-                          value={producto.stock}
-                          onChange={(e) => handleUpdateStock(producto.id, Number.parseInt(e.target.value) || 0)}
-                          className="w-24 text-center"
-                        />
-                      </TableCell>
-                      <TableCell className="text-center">
-                        <Button variant="destructive" size="sm" onClick={() => handleDeleteProducto(producto.id)}>
-                          Eliminar
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
           )}
-        </CardContent>
-      </Card>
+        </div>
+      </form>
+
+      <div className="rounded-lg border shadow-sm">
+        <h3 className="p-4 text-lg font-semibold">Listado de Productos</h3>
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Nombre</TableHead>
+              <TableHead>Descripción</TableHead>
+              <TableHead>Precio</TableHead>
+              <TableHead>Stock</TableHead>
+              <TableHead>Acciones</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {products.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={5} className="h-24 text-center">
+                  No hay productos registrados.
+                </TableCell>
+              </TableRow>
+            ) : (
+              products.map((product) => (
+                <TableRow key={product.id}>
+                  <TableCell>{product.name}</TableCell>
+                  <TableCell>{product.description || "-"}</TableCell>
+                  <TableCell>${product.price.toFixed(2)}</TableCell>
+                  <TableCell>{product.stock}</TableCell>
+                  <TableCell>
+                    <Button variant="outline" size="sm" onClick={() => handleEdit(product)}>
+                      Editar
+                    </Button>
+                  </TableCell>
+                </TableRow>
+              ))
+            )}
+          </TableBody>
+        </Table>
+      </div>
     </div>
   )
 }

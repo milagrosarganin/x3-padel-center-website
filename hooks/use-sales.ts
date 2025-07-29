@@ -3,6 +3,13 @@
 import { useState, useEffect, useCallback } from "react"
 import { createClient } from "@/lib/supabase"
 import { useAuth } from "./use-auth"
+import { useProducts } from "./use-products" // Import useProducts to refresh stock
+
+interface SaleItem {
+  product_id: string
+  quantity: number
+  price_at_sale: number
+}
 
 interface Sale {
   id: string
@@ -11,11 +18,13 @@ interface Sale {
   total_amount: number
   payment_method: string | null
   created_at: string
+  items?: SaleItem[] // Optional, for when fetching details
 }
 
 export function useSales() {
   const supabase = createClient()
   const { user } = useAuth()
+  const { fetchProducts } = useProducts() // Get fetchProducts from useProducts
   const [sales, setSales] = useState<Sale[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<Error | null>(null)
@@ -49,14 +58,15 @@ export function useSales() {
   }, [fetchSales])
 
   const addSale = async (
-    newSale: Omit<Sale, "id" | "user_id" | "sale_date" | "created_at"> & {
-      items: { product_id: string; quantity: number; price_at_sale: number }[]
-    },
+    newSale: Omit<Sale, "id" | "user_id" | "sale_date" | "created_at"> & { items: SaleItem[] },
   ) => {
     if (!user) throw new Error("User not authenticated.")
     setLoading(true)
     setError(null)
     try {
+      // Start a transaction if Supabase supports it directly, or handle sequentially
+      // For simplicity, we'll do it sequentially and rely on RLS and triggers for integrity
+
       const { data: saleData, error: saleError } = await supabase
         .from("sales")
         .insert({
@@ -71,6 +81,7 @@ export function useSales() {
 
       const saleId = saleData.id
 
+      // Insert sale items
       const saleItemsToInsert = newSale.items.map((item) => ({
         sale_id: saleId,
         product_id: item.product_id,
@@ -82,9 +93,10 @@ export function useSales() {
 
       if (itemsError) throw itemsError
 
-      await fetchSales() // Re-fetch sales to update the list
-      // Note: Product stock updates are handled by database triggers,
-      // but you might want to re-fetch products in the UI if needed.
+      // Re-fetch sales to update the list
+      await fetchSales()
+      // Re-fetch products to update stock display
+      await fetchProducts()
 
       return saleData
     } catch (err: any) {

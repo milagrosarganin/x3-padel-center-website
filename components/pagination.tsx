@@ -22,20 +22,18 @@ export function Pagination({ currentPage, totalPages, onPageChange }: Pagination
     }
   }
 
-  if (totalPages <= 1) {
-    return null // Don't show pagination if there's only one page
-  }
-
   return (
-    <div className="flex items-center justify-center space-x-2 py-4">
+    <div className="flex items-center justify-end gap-2 p-4">
       <Button variant="outline" size="icon" onClick={handlePrevious} disabled={currentPage === 1}>
         <ChevronLeft className="h-4 w-4" />
+        <span className="sr-only">Previous</span>
       </Button>
       <span className="text-sm font-medium">
         Página {currentPage} de {totalPages}
       </span>
       <Button variant="outline" size="icon" onClick={handleNext} disabled={currentPage === totalPages}>
         <ChevronRight className="h-4 w-4" />
+        <span className="sr-only">Next</span>
       </Button>
     </div>
   )

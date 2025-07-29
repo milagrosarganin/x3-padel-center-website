@@ -8,7 +8,7 @@ import { useAuth } from "@/hooks/use-auth" // Import useAuth hook
 import { LoadingSpinner } from "./loading-spinner"
 
 export function AuthGuard({ children }: { children: React.ReactNode }) {
-  const { user, loading } = useAuth() // Use the hook to get user and loading state
+  const { user, loading } = useAuth() // Usa el hook para obtener el estado del usuario y la carga
   const router = useRouter()
   const pathname = usePathname()
 
@@ -17,14 +17,14 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
       const isLoginPage = pathname === "/login"
 
       if (user && isLoginPage) {
-        // If user is logged in and tries to access login page, redirect to home
+        // Si el usuario está logueado e intenta acceder a la página de login, redirige a home
         router.push("/")
       } else if (!user && !isLoginPage) {
-        // If user is not logged in and tries to access a protected page, redirect to login
+        // Si el usuario NO está logueado e intenta acceder a una página protegida, redirige a login
         router.push("/login")
       }
     }
-  }, [user, loading, router, pathname]) // Depend on user and loading from useAuth
+  }, [user, loading, router, pathname]) // Depende de user y loading de useAuth
 
   if (loading || (!user && pathname !== "/login")) {
     return (

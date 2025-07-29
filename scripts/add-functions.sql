@@ -1,51 +1,91 @@
--- Función para actualizar stock cuando se hace una venta
-CREATE OR REPLACE FUNCTION actualizar_stock(producto_id UUID, cantidad_vendida INTEGER)
-RETURNS VOID AS $$
-BEGIN
-  UPDATE productos 
-  SET stock = stock - cantidad_vendida,
-      updated_at = NOW()
-  WHERE id = producto_id;
-END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+-- Function to get user's business name
+CREATE OR REPLACE FUNCTION get_business_name(user_id uuid)
+RETURNS text AS $$
+  SELECT business_name FROM public.users WHERE id = user_id;
+$$ LANGUAGE sql STABLE;
 
--- Función para obtener estadísticas del dashboard
-CREATE OR REPLACE FUNCTION get_dashboard_stats(negocio_uuid UUID)
-RETURNS JSON AS $$
+-- Function to get user's full name
+CREATE OR REPLACE FUNCTION get_full_name(user_id uuid)
+RETURNS text AS $$
+  SELECT full_name FROM public.users WHERE id = user_id;
+$$ LANGUAGE sql STABLE;
+
+-- Function to calculate total sales for a user
+CREATE OR REPLACE FUNCTION get_total_sales(p_user_id uuid)
+RETURNS numeric AS $$
 DECLARE
-  ventas_hoy DECIMAL;
-  ventas_semana DECIMAL;
-  stock_bajo INTEGER;
-  mesas_abiertas INTEGER;
+  total numeric;
 BEGIN
-  -- Ventas de hoy
-  SELECT COALESCE(SUM(total), 0) INTO ventas_hoy
-  FROM ventas 
-  WHERE negocio_id = negocio_uuid 
-    AND fecha = CURRENT_DATE 
-    AND estado = 'completada';
+  SELECT SUM(total_amount) INTO total
+  FROM public.sales
+  WHERE user_id = p_user_id;
+  RETURN COALESCE(total, 0);
+END;
+$$ LANGUAGE plpgsql STABLE;
 
-  -- Ventas de la semana
-  SELECT COALESCE(SUM(total), 0) INTO ventas_semana
-  FROM ventas 
-  WHERE negocio_id = negocio_uuid 
-    AND fecha >= CURRENT_DATE - INTERVAL '7 days'
-    AND estado = 'completada';
+-- Function to calculate total expenses for a user
+CREATE OR REPLACE FUNCTION get_total_expenses(p_user_id uuid)
+RETURNS numeric AS $$
+DECLARE
+  total numeric;
+BEGIN
+  SELECT SUM(amount) INTO total
+  FROM public.expenses
+  WHERE user_id = p_user_id;
+  RETURN COALESCE(total, 0);
+END;
+$$ LANGUAGE plpgsql STABLE;
 
-  -- Productos con stock bajo
-  SELECT COUNT(*) INTO stock_bajo
-  FROM productos 
-  WHERE negocio_id = negocio_uuid 
-    AND stock <= stock_minimo;
+-- Function to get current stock of a product
+CREATE OR REPLACE FUNCTION get_product_stock(p_product_id uuid)
+RETURNS integer AS $$
+  SELECT stock FROM public.products WHERE id = p_product_id;
+$$ LANGUAGE sql STABLE;
 
-  -- Mesas abiertas (esto lo puedes ajustar según tu lógica)
-  mesas_abiertas := 0; -- Por ahora en 0, puedes implementar lógica de mesas
-
-  RETURN json_build_object(
-    'ventas_hoy', ventas_hoy,
-    'ventas_semana', ventas_semana,
-    'stock_bajo', stock_bajo,
-    'mesas_abiertas', mesas_abiertas
-  );
+-- Function to update product stock after a sale
+CREATE OR REPLACE FUNCTION update_product_stock_on_sale()
+RETURNS TRIGGER AS $$
+BEGIN
+  UPDATE public.products
+  SET stock = stock - NEW.quantity
+  WHERE id = NEW.product_id;
+  RETURN NEW;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
+
+DROP TRIGGER IF EXISTS on_sale_item_insert ON public.sale_items;
+CREATE TRIGGER on_sale_item_insert
+AFTER INSERT ON public.sale_items
+FOR EACH ROW EXECUTE FUNCTION update_product_stock_on_sale();
+
+-- Function to update product stock after a sale item deletion (return stock)
+CREATE OR REPLACE FUNCTION update_product_stock_on_sale_item_delete()
+RETURNS TRIGGER AS $$
+BEGIN
+  UPDATE public.products
+  SET stock = stock + OLD.quantity
+  WHERE id = OLD.product_id;
+  RETURN OLD;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+DROP TRIGGER IF EXISTS on_sale_item_delete ON public.sale_items;
+CREATE TRIGGER on_sale_item_delete
+AFTER DELETE ON public.sale_items
+FOR EACH ROW EXECUTE FUNCTION update_product_stock_on_sale_item_delete();
+
+-- Function to update product stock after a sale item update (adjust stock)
+CREATE OR REPLACE FUNCTION update_product_stock_on_sale_item_update()
+RETURNS TRIGGER AS $$
+BEGIN
+  UPDATE public.products
+  SET stock = stock - (NEW.quantity - OLD.quantity)
+  WHERE id = NEW.product_id;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+DROP TRIGGER IF EXISTS on_sale_item_update ON public.sale_items;
+CREATE TRIGGER on_sale_item_update
+AFTER UPDATE OF quantity ON public.sale_items
+FOR EACH ROW EXECUTE FUNCTION update_product_stock_on_sale_item_update();

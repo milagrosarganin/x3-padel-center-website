@@ -1,5 +1,3 @@
-"use client"
-
 import * as React from "react"
 import * as TabsPrimitive from "@radix-ui/react-tabs"
 
@@ -33,6 +31,7 @@ const TabsTrigger = React.forwardRef<
       className,
     )}
     {...props}
+    ref={ref}
   />
 ))
 TabsTrigger.displayName = TabsPrimitive.Trigger.displayName

@@ -1,149 +1,88 @@
 "use client"
 
-import * as React from "react"
+import { useState, useEffect, useCallback } from "react"
+import { createClient } from "@/lib/supabase"
+import type { User, AuthChangeEvent, Session } from "@supabase/supabase-js" // Import AuthChangeEvent and Session types
 
-import type { ToastProps } from "@/components/ui/toast"
+export function useAuth() {
+  console.log("useAuth hook inicializado.")
+  const supabase = createClient()
+  const [user, setUser] = useState<User | null>(null)
+  const [loading, setLoading] = useState(true)
 
-const TOAST_LIMIT = 1
-const TOAST_REMOVE_DELAY = 1000000 // Keep toasts visible until manually closed or new one appears
-
-type ToasterToast = ToastProps & {
-  id: string
-  title?: React.ReactNode
-  description?: React.ReactNode
-  action?: React.ReactNode
-  open?: boolean // Add the 'open' property here
-}
-
-const actionTypes = {
-  ADD_TOAST: "ADD_TOAST",
-  UPDATE_TOAST: "UPDATE_TOAST",
-  DISMISS_TOAST: "DISMISS_TOAST",
-  REMOVE_TOAST: "REMOVE_TOAST",
-} as const
-
-let count = 0
-
-function genId() {
-  count = (count + 1) % Number.MAX_SAFE_INTEGER
-  return count.toString()
-}
-
-type Action =
-  | {
-      type: typeof actionTypes.ADD_TOAST
-      toast: ToasterToast
+  const fetchUser = useCallback(async () => {
+    console.log("fetchUser: Iniciando la obtención del usuario.")
+    setLoading(true)
+    const {
+      data: { user },
+      error,
+    } = await supabase.auth.getUser()
+    if (error) {
+      console.error("Error al obtener el usuario:", error.message)
+      setUser(null)
+    } else {
+      setUser(user)
     }
-  | {
-      type: typeof actionTypes.UPDATE_TOAST
-      toast: Partial<ToasterToast>
-    }
-  | {
-      type: typeof actionTypes.DISMISS_TOAST
-      toastId?: ToasterToast["id"]
-    }
-  | {
-      type: typeof actionTypes.REMOVE_TOAST
-      toastId?: ToasterToast["id"]
-    }
+    console.log("fetchUser: Datos del usuario:", user)
+    setLoading(false)
+  }, [supabase])
 
-interface State {
-  toasts: ToasterToast[]
-}
+  useEffect(() => {
+    console.log("Llamando a fetchUser al montar el componente.")
+    fetchUser()
 
-const reducer = (state: State, action: Action): State => {
-  switch (action.type) {
-    case actionTypes.ADD_TOAST:
-      return {
-        ...state,
-        toasts: [action.toast, ...state.toasts].slice(0, TOAST_LIMIT),
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((event: AuthChangeEvent, newSession: Session | null) => {
+      console.log("Evento de cambio de estado de autenticación:", event, "Sesión:", newSession)
+      if (event === "SIGNED_IN" || event === "TOKEN_REFRESHED") {
+        setUser(newSession?.user || null)
+        console.log("Cambio de estado de autenticación: Usuario actualizado a", newSession?.user || null)
+      } else if (event === "SIGNED_OUT") {
+        setUser(null)
+        console.log("Cambio de estado de autenticación: Usuario actualizado a", null)
       }
+      setLoading(false)
+    })
 
-    case actionTypes.UPDATE_TOAST:
-      return {
-        ...state,
-        toasts: state.toasts.map((t) => (t.id === action.toast.id ? { ...t, ...action.toast } : t)),
-      }
-
-    case actionTypes.DISMISS_TOAST: {
-      const { toastId } = action
-
-      // ! Side effects ! - This is not beautiful, but it's what we need for a clean API.
-      if (toastId) {
-        return {
-          ...state,
-          toasts: state.toasts.map((t) => (t.id === toastId ? { ...t, open: false } : t)),
-        }
-      } else {
-        return {
-          ...state,
-          toasts: state.toasts.map((t) => ({
-            ...t,
-            open: false,
-          })),
-        }
-      }
-    }
-
-    case actionTypes.REMOVE_TOAST:
-      return {
-        ...state,
-        toasts: state.toasts.filter((t) => t.id !== action.toastId),
-      }
-  }
-}
-
-const listeners: ((state: State) => void)[] = []
-
-let memoryState: State = { toasts: [] }
-
-function dispatch(action: Action) {
-  memoryState = reducer(memoryState, action)
-  listeners.forEach((listener) => listener(memoryState))
-}
-
-type Toast = Partial<ToasterToast>
-
-function toast({ ...props }: Toast) {
-  const id = genId()
-
-  const update = (props: ToasterToast) => dispatch({ type: actionTypes.UPDATE_TOAST, toast: { ...props, id } })
-  const dismiss = () => dispatch({ type: actionTypes.DISMISS_TOAST, toastId: id })
-
-  dispatch({
-    type: actionTypes.ADD_TOAST,
-    toast: {
-      ...props,
-      id,
-      open: true,
-      onOpenChange: (open) => {
-        if (!open) dismiss()
-      },
-    },
-  })
-
-  return {
-    id: id,
-    dismiss,
-    update,
-  }
-}
-
-export function useToast() {
-  const [state, setState] = React.useState<State>(memoryState)
-
-  React.useEffect(() => {
-    listeners.push(setState)
     return () => {
-      const index = listeners.indexOf(setState)
-      if (index > -1) {
-        listeners.splice(index, 1)
-      }
+      console.log("Desuscribiendo del listener de autenticación.")
+      subscription?.unsubscribe()
     }
-  }, [state])
+  }, [fetchUser, supabase.auth])
 
-  return {
-    ...state,
-    toast,
+  const signIn = async (email: string, password: string) => {
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password })
+    if (data.user) {
+      setUser(data.user)
+    }
+    return { data, error }
   }
+
+  const signUp = async (email: string, password: string, fullName: string, businessName: string) => {
+    const { data, error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: {
+        data: {
+          full_name: fullName,
+          business_name: businessName,
+        },
+      },
+    })
+    if (data.user) {
+      setUser(data.user)
+    }
+    return { data, error }
+  }
+
+  const signOut = async () => {
+    const { error } = await supabase.auth.signOut()
+    if (!error) {
+      setUser(null)
+    }
+    return { error }
+  }
+
+  return { user, loading, signIn, signUp, signOut, fetchUser }
 }

@@ -2,213 +2,178 @@
 
 import type React from "react"
 
-import { useState, useEffect } from "react"
-import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card"
-import { Label } from "@/components/ui/label"
-import { Input } from "@/components/ui/input"
+import { useState } from "react"
 import { Button } from "@/components/ui/button"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Table, TableHeader, TableRow, TableHead, TableBody, TableCell } from "@/components/ui/table"
-import { useAuth } from "@/hooks/use-auth"
-import { createClient } from "@/lib/supabase"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { Textarea } from "@/components/ui/textarea"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { useExpenses } from "@/hooks/use-expenses"
 import { useToast } from "@/hooks/use-toast"
 import { format } from "date-fns"
 import { es } from "date-fns/locale"
 import { LoadingSpinner } from "./loading-spinner"
 import { ExportButton } from "./export-button"
 
-interface Gasto {
-  id: string
-  fecha: string
-  monto: number
-  descripcion: string
-  categoria: string
-  created_at: string
-}
-
 export function Gastos() {
-  const supabase = createClient()
-  const { user } = useAuth()
+  const { expenses, addExpense, loading, error } = useExpenses()
   const { toast } = useToast()
 
-  const [fecha, setFecha] = useState(format(new Date(), "yyyy-MM-dd"))
-  const [monto, setMonto] = useState<number>(0)
-  const [descripcion, setDescripcion] = useState("")
-  const [categoria, setCategoria] = useState("")
-  const [gastos, setGastos] = useState<Gasto[]>([])
-  const [loading, setLoading] = useState(true)
-  const [submitting, setSubmitting] = useState(false)
-
-  const categoriasGastos = ["Alquiler", "Servicios", "Salarios", "Mantenimiento", "Marketing", "Suministros", "Otros"]
-
-  useEffect(() => {
-    if (user) {
-      fetchGastos()
-    }
-  }, [user])
-
-  const fetchGastos = async () => {
-    setLoading(true)
-    const { data, error } = await supabase
-      .from("gastos")
-      .select("*")
-      .eq("user_id", user?.id)
-      .order("fecha", { ascending: false })
-      .order("created_at", { ascending: false })
-
-    if (error) {
-      toast({
-        title: "Error al cargar gastos",
-        description: error.message,
-        variant: "destructive",
-      })
-    } else {
-      setGastos(data || [])
-    }
-    setLoading(false)
-  }
+  const [description, setDescription] = useState("")
+  const [amount, setAmount] = useState("")
+  const [category, setCategory] = useState("")
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!user) {
+    if (!description || !amount) {
       toast({
         title: "Error",
-        description: "Debes iniciar sesión para registrar un gasto.",
+        description: "Por favor, completa la descripción y el monto.",
         variant: "destructive",
       })
       return
     }
 
-    setSubmitting(true)
-    const { data, error } = await supabase.from("gastos").insert({
-      user_id: user.id,
-      fecha: fecha,
-      monto: monto,
-      descripcion: descripcion,
-      categoria: categoria,
-    })
-
-    if (error) {
+    const parsedAmount = Number.parseFloat(amount)
+    if (isNaN(parsedAmount) || parsedAmount <= 0) {
       toast({
-        title: "Error al registrar gasto",
-        description: error.message,
+        title: "Error",
+        description: "El monto debe ser un número positivo.",
         variant: "destructive",
       })
-    } else {
+      return
+    }
+
+    try {
+      await addExpense({
+        description,
+        amount: parsedAmount,
+        category: category || null,
+      })
       toast({
         title: "Gasto registrado",
-        description: "El gasto ha sido guardado exitosamente.",
-        variant: "default",
+        description: "El gasto se ha registrado exitosamente.",
       })
-      // Clear form and refetch
-      setMonto(0)
-      setDescripcion("")
-      setCategoria("")
-      setFecha(format(new Date(), "yyyy-MM-dd"))
-      fetchGastos()
+      setDescription("")
+      setAmount("")
+      setCategory("")
+    } catch (err: any) {
+      toast({
+        title: "Error al registrar gasto",
+        description: err.message || "Ocurrió un error inesperado.",
+        variant: "destructive",
+      })
     }
-    setSubmitting(false)
   }
 
-  const exportHeaders = [
-    { key: "fecha", label: "Fecha" },
-    { key: "monto", label: "Monto" },
-    { key: "descripcion", label: "Descripción" },
-    { key: "categoria", label: "Categoría" },
-  ] as const // 'as const' for type safety
+  const expenseHeaders = [
+    { key: "expense_date", label: "Fecha" },
+    { key: "description", label: "Descripción" },
+    { key: "amount", label: "Monto" },
+    { key: "category", label: "Categoría" },
+  ] as const // Use 'as const' for type inference
 
   if (loading) {
     return (
-      <div className="flex justify-center items-center h-64">
+      <div className="flex items-center justify-center p-8">
         <LoadingSpinner />
+        <p className="ml-2">Cargando gastos...</p>
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="p-8 text-red-500">
+        <p>Error al cargar gastos: {error.message}</p>
       </div>
     )
   }
 
   return (
-    <div className="space-y-6">
-      <Card>
-        <CardHeader>
-          <CardTitle>Registrar Nuevo Gasto</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="fecha">Fecha</Label>
-              <Input id="fecha" type="date" value={fecha} onChange={(e) => setFecha(e.target.value)} required />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="monto">Monto</Label>
-              <Input
-                id="monto"
-                type="number"
-                step="0.01"
-                value={monto}
-                onChange={(e) => setMonto(Number.parseFloat(e.target.value))}
-                required
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="categoria">Categoría</Label>
-              <Select value={categoria} onValueChange={setCategoria} required>
-                <SelectTrigger id="categoria">
-                  <SelectValue placeholder="Selecciona una categoría" />
-                </SelectTrigger>
-                <SelectContent>
-                  {categoriasGastos.map((cat) => (
-                    <SelectItem key={cat} value={cat}>
-                      {cat}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2 md:col-span-2">
-              <Label htmlFor="descripcion">Descripción</Label>
-              <Input id="descripcion" value={descripcion} onChange={(e) => setDescripcion(e.target.value)} required />
-            </div>
-            <Button type="submit" className="md:col-span-2" disabled={submitting}>
-              {submitting ? <LoadingSpinner className="mr-2" /> : null}
-              Registrar Gasto
-            </Button>
-          </form>
-        </CardContent>
-      </Card>
+    <div className="grid gap-6">
+      <form onSubmit={handleSubmit} className="grid gap-4 rounded-lg border p-4">
+        <h3 className="text-lg font-semibold">Registrar Nuevo Gasto</h3>
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+          <div className="space-y-2">
+            <Label htmlFor="description">Descripción</Label>
+            <Textarea
+              id="description"
+              placeholder="Descripción del gasto"
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              required
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="amount">Monto</Label>
+            <Input
+              id="amount"
+              type="number"
+              step="0.01"
+              placeholder="0.00"
+              value={amount}
+              onChange={(e) => setAmount(e.target.value)}
+              required
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="category">Categoría (opcional)</Label>
+            <Input
+              id="category"
+              placeholder="Ej: Alquiler, Suministros"
+              value={category}
+              onChange={(e) => setCategory(e.target.value)}
+            />
+          </div>
+        </div>
+        <Button type="submit" className="w-full md:w-auto">
+          Registrar Gasto
+        </Button>
+      </form>
 
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-          <CardTitle className="text-2xl font-bold">Historial de Gastos</CardTitle>
-          <ExportButton data={gastos} filename="gastos" headers={exportHeaders} />
-        </CardHeader>
-        <CardContent>
-          {gastos.length === 0 ? (
-            <p className="text-center text-muted-foreground">No hay gastos registrados aún.</p>
-          ) : (
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Fecha</TableHead>
-                    <TableHead>Monto</TableHead>
-                    <TableHead>Descripción</TableHead>
-                    <TableHead>Categoría</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {gastos.map((gasto) => (
-                    <TableRow key={gasto.id}>
-                      <TableCell>{format(new Date(gasto.fecha), "dd/MM/yyyy", { locale: es })}</TableCell>
-                      <TableCell>{gasto.monto.toFixed(2)}</TableCell>
-                      <TableCell>{gasto.descripcion}</TableCell>
-                      <TableCell>{gasto.categoria}</TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+      <div className="rounded-lg border shadow-sm">
+        <div className="flex items-center justify-between p-4">
+          <h3 className="text-lg font-semibold">Listado de Gastos</h3>
+          <ExportButton
+            data={expenses.map((exp) => ({
+              ...exp,
+              expense_date: format(new Date(exp.expense_date), "dd/MM/yyyy", { locale: es }),
+              amount: exp.amount.toFixed(2),
+            }))}
+            headers={expenseHeaders}
+            filename="gastos"
+          />
+        </div>
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Fecha</TableHead>
+              <TableHead>Descripción</TableHead>
+              <TableHead>Monto</TableHead>
+              <TableHead>Categoría</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {expenses.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={4} className="h-24 text-center">
+                  No hay gastos registrados.
+                </TableCell>
+              </TableRow>
+            ) : (
+              expenses.map((expense) => (
+                <TableRow key={expense.id}>
+                  <TableCell>{format(new Date(expense.expense_date), "dd/MM/yyyy", { locale: es })}</TableCell>
+                  <TableCell>{expense.description}</TableCell>
+                  <TableCell>${expense.amount.toFixed(2)}</TableCell>
+                  <TableCell>{expense.category || "-"}</TableCell>
+                </TableRow>
+              ))
+            )}
+          </TableBody>
+        </Table>
+      </div>
     </div>
   )
 }

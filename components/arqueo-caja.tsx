@@ -2,229 +2,167 @@
 
 import type React from "react"
 
-import { useState, useEffect } from "react"
-import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card"
-import { Label } from "@/components/ui/label"
-import { Input } from "@/components/ui/input"
+import { useState } from "react"
 import { Button } from "@/components/ui/button"
-import { useAuth } from "@/hooks/use-auth"
-import { createClient } from "@/lib/supabase"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { Textarea } from "@/components/ui/textarea"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { useCashRegisterMovements } from "@/hooks/use-cash-register-movements"
 import { useToast } from "@/hooks/use-toast"
 import { format } from "date-fns"
 import { es } from "date-fns/locale"
-import { Table, TableHeader, TableRow, TableHead, TableBody, TableCell } from "@/components/ui/table"
 import { LoadingSpinner } from "./loading-spinner"
 
-interface ArqueoCajaEntry {
-  id: string
-  fecha: string
-  saldo_inicial: number
-  ventas_efectivo: number
-  gastos_efectivo: number
-  saldo_final: number
-  diferencia: number
-  comentarios: string | null
-  created_at: string
-}
-
 export function ArqueoCaja() {
-  const supabase = createClient()
-  const { user } = useAuth()
+  const { movements, addMovement, loading, error } = useCashRegisterMovements()
   const { toast } = useToast()
 
-  const [saldoInicial, setSaldoInicial] = useState<number>(0)
-  const [ventasEfectivo, setVentasEfectivo] = useState<number>(0)
-  const [gastosEfectivo, setGastosEfectivo] = useState<number>(0)
-  const [comentarios, setComentarios] = useState<string>("")
-  const [arqueos, setArqueos] = useState<ArqueoCajaEntry[]>([])
-  const [loading, setLoading] = useState(true)
-  const [submitting, setSubmitting] = useState(false)
-
-  const saldoFinal = saldoInicial + ventasEfectivo - gastosEfectivo
-  const diferencia = saldoFinal - saldoInicial // Esto podría ser el monto esperado vs el contado
-
-  useEffect(() => {
-    if (user) {
-      fetchArqueos()
-    }
-  }, [user])
-
-  const fetchArqueos = async () => {
-    setLoading(true)
-    const { data, error } = await supabase
-      .from("arqueo_caja")
-      .select("*")
-      .eq("user_id", user?.id)
-      .order("fecha", { ascending: false })
-      .limit(10) // Fetch last 10 entries
-
-    if (error) {
-      toast({
-        title: "Error al cargar arqueos",
-        description: error.message,
-        variant: "destructive",
-      })
-    } else {
-      setArqueos(data || [])
-    }
-    setLoading(false)
-  }
+  const [amount, setAmount] = useState("")
+  const [description, setDescription] = useState("")
+  const [movementType, setMovementType] = useState<"initial_balance" | "deposit" | "withdrawal" | "closing_balance">(
+    "deposit",
+  )
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!user) {
+    if (!amount || !movementType) {
       toast({
         title: "Error",
-        description: "Debes iniciar sesión para registrar un arqueo.",
+        description: "Por favor, completa todos los campos requeridos.",
         variant: "destructive",
       })
       return
     }
 
-    setSubmitting(true)
-    const { data, error } = await supabase.from("arqueo_caja").insert({
-      user_id: user.id,
-      fecha: format(new Date(), "yyyy-MM-dd"),
-      saldo_inicial: saldoInicial,
-      ventas_efectivo: ventasEfectivo,
-      gastos_efectivo: gastosEfectivo,
-      saldo_final: saldoFinal,
-      diferencia: diferencia,
-      comentarios: comentarios,
-    })
-
-    if (error) {
+    const parsedAmount = Number.parseFloat(amount)
+    if (isNaN(parsedAmount) || parsedAmount <= 0) {
       toast({
-        title: "Error al registrar arqueo",
-        description: error.message,
+        title: "Error",
+        description: "El monto debe ser un número positivo.",
         variant: "destructive",
       })
-    } else {
-      toast({
-        title: "Arqueo registrado",
-        description: "El arqueo de caja ha sido guardado exitosamente.",
-        variant: "default",
-      })
-      // Clear form and refetch
-      setSaldoInicial(0)
-      setVentasEfectivo(0)
-      setGastosEfectivo(0)
-      setComentarios("")
-      fetchArqueos()
+      return
     }
-    setSubmitting(false)
+
+    try {
+      await addMovement({
+        amount: parsedAmount,
+        description,
+        movement_type: movementType,
+      })
+      toast({
+        title: "Movimiento registrado",
+        description: "El movimiento de caja se ha registrado exitosamente.",
+      })
+      setAmount("")
+      setDescription("")
+      setMovementType("deposit")
+    } catch (err: any) {
+      toast({
+        title: "Error al registrar movimiento",
+        description: err.message || "Ocurrió un error inesperado.",
+        variant: "destructive",
+      })
+    }
   }
 
   if (loading) {
     return (
-      <div className="flex justify-center items-center h-64">
+      <div className="flex items-center justify-center p-8">
         <LoadingSpinner />
+        <p className="ml-2">Cargando movimientos de caja...</p>
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="p-8 text-red-500">
+        <p>Error al cargar movimientos de caja: {error.message}</p>
       </div>
     )
   }
 
   return (
-    <div className="space-y-6">
-      <Card>
-        <CardHeader>
-          <CardTitle>Nuevo Arqueo de Caja</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="saldo-inicial">Saldo Inicial</Label>
-              <Input
-                id="saldo-inicial"
-                type="number"
-                step="0.01"
-                value={saldoInicial}
-                onChange={(e) => setSaldoInicial(Number.parseFloat(e.target.value))}
-                required
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="ventas-efectivo">Ventas en Efectivo</Label>
-              <Input
-                id="ventas-efectivo"
-                type="number"
-                step="0.01"
-                value={ventasEfectivo}
-                onChange={(e) => setVentasEfectivo(Number.parseFloat(e.target.value))}
-                required
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="gastos-efectivo">Gastos en Efectivo</Label>
-              <Input
-                id="gastos-efectivo"
-                type="number"
-                step="0.01"
-                value={gastosEfectivo}
-                onChange={(e) => setGastosEfectivo(Number.parseFloat(e.target.value))}
-                required
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="saldo-final">Saldo Final Calculado</Label>
-              <Input id="saldo-final" type="number" value={saldoFinal.toFixed(2)} readOnly disabled />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="diferencia">Diferencia</Label>
-              <Input id="diferencia" type="number" value={diferencia.toFixed(2)} readOnly disabled />
-            </div>
-            <div className="space-y-2 md:col-span-2">
-              <Label htmlFor="comentarios">Comentarios</Label>
-              <Input id="comentarios" value={comentarios} onChange={(e) => setComentarios(e.target.value)} />
-            </div>
-            <Button type="submit" className="md:col-span-2" disabled={submitting}>
-              {submitting ? <LoadingSpinner className="mr-2" /> : null}
-              Registrar Arqueo
-            </Button>
-          </form>
-        </CardContent>
-      </Card>
+    <div className="grid gap-6">
+      <form onSubmit={handleSubmit} className="grid gap-4 rounded-lg border p-4">
+        <h3 className="text-lg font-semibold">Registrar Nuevo Movimiento</h3>
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+          <div className="space-y-2">
+            <Label htmlFor="movement-type">Tipo de Movimiento</Label>
+            <Select value={movementType} onValueChange={(value: typeof movementType) => setMovementType(value)}>
+              <SelectTrigger id="movement-type">
+                <SelectValue placeholder="Selecciona un tipo" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="initial_balance">Saldo Inicial</SelectItem>
+                <SelectItem value="deposit">Ingreso</SelectItem>
+                <SelectItem value="withdrawal">Egreso</SelectItem>
+                <SelectItem value="closing_balance">Cierre de Caja</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="amount">Monto</Label>
+            <Input
+              id="amount"
+              type="number"
+              step="0.01"
+              placeholder="0.00"
+              value={amount}
+              onChange={(e) => setAmount(e.target.value)}
+              required
+            />
+          </div>
+          <div className="space-y-2 md:col-span-1">
+            <Label htmlFor="description">Descripción (opcional)</Label>
+            <Textarea
+              id="description"
+              placeholder="Detalles del movimiento"
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+            />
+          </div>
+        </div>
+        <Button type="submit" className="w-full md:w-auto">
+          Registrar Movimiento
+        </Button>
+      </form>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Historial de Arqueos</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {arqueos.length === 0 ? (
-            <p className="text-center text-muted-foreground">No hay arqueos registrados aún.</p>
-          ) : (
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Fecha</TableHead>
-                    <TableHead>Saldo Inicial</TableHead>
-                    <TableHead>Ventas Efectivo</TableHead>
-                    <TableHead>Gastos Efectivo</TableHead>
-                    <TableHead>Saldo Final</TableHead>
-                    <TableHead>Diferencia</TableHead>
-                    <TableHead>Comentarios</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {arqueos.map((arqueo) => (
-                    <TableRow key={arqueo.id}>
-                      <TableCell>{format(new Date(arqueo.fecha), "dd/MM/yyyy", { locale: es })}</TableCell>
-                      <TableCell>{arqueo.saldo_inicial.toFixed(2)}</TableCell>
-                      <TableCell>{arqueo.ventas_efectivo.toFixed(2)}</TableCell>
-                      <TableCell>{arqueo.gastos_efectivo.toFixed(2)}</TableCell>
-                      <TableCell>{arqueo.saldo_final.toFixed(2)}</TableCell>
-                      <TableCell className={arqueo.diferencia !== 0 ? "text-red-500 font-medium" : ""}>
-                        {arqueo.diferencia.toFixed(2)}
-                      </TableCell>
-                      <TableCell>{arqueo.comentarios || "-"}</TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+      <div className="rounded-lg border shadow-sm">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Fecha</TableHead>
+              <TableHead>Tipo</TableHead>
+              <TableHead>Monto</TableHead>
+              <TableHead>Descripción</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {movements.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={4} className="h-24 text-center">
+                  No hay movimientos de caja registrados.
+                </TableCell>
+              </TableRow>
+            ) : (
+              movements.map((movement) => (
+                <TableRow key={movement.id}>
+                  <TableCell>{format(new Date(movement.movement_date), "dd/MM/yyyy HH:mm", { locale: es })}</TableCell>
+                  <TableCell>{movement.movement_type}</TableCell>
+                  <TableCell className={movement.movement_type === "withdrawal" ? "text-red-500" : "text-green-500"}>
+                    ${movement.amount.toFixed(2)}
+                  </TableCell>
+                  <TableCell>{movement.description || "-"}</TableCell>
+                </TableRow>
+              ))
+            )}
+          </TableBody>
+        </Table>
+      </div>
     </div>
   )
 }

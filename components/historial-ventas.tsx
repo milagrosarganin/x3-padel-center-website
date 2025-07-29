@@ -1,133 +1,81 @@
 "use client"
-
-import { useState, useEffect } from "react"
-import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card"
-import { Table, TableHeader, TableRow, TableHead, TableBody, TableCell } from "@/components/ui/table"
-import { useAuth } from "@/hooks/use-auth"
-import { createClient } from "@/lib/supabase"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { useSales } from "@/hooks/use-sales"
 import { useToast } from "@/hooks/use-toast"
 import { format } from "date-fns"
 import { es } from "date-fns/locale"
 import { LoadingSpinner } from "./loading-spinner"
 import { ExportButton } from "./export-button"
 
-interface VentaItem {
-  producto_id: string
-  nombre: string
-  cantidad: number
-  precio_unitario: number
-}
-
-interface Venta {
-  id: string
-  fecha: string
-  total: number
-  metodo_pago: string
-  detalles: VentaItem[]
-  created_at: string
-}
-
 export function HistorialVentas() {
-  const supabase = createClient()
-  const { user } = useAuth()
+  const { sales, loading, error } = useSales()
   const { toast } = useToast()
 
-  const [ventas, setVentas] = useState<Venta[]>([])
-  const [loading, setLoading] = useState(true)
-
-  useEffect(() => {
-    if (user) {
-      fetchVentas()
-    }
-  }, [user])
-
-  const fetchVentas = async () => {
-    setLoading(true)
-    const { data, error } = await supabase
-      .from("ventas")
-      .select("*")
-      .eq("user_id", user?.id)
-      .order("fecha", { ascending: false })
-      .order("created_at", { ascending: false })
-
-    if (error) {
-      toast({
-        title: "Error al cargar ventas",
-        description: error.message,
-        variant: "destructive",
-      })
-    } else {
-      setVentas(data || [])
-    }
-    setLoading(false)
-  }
-
-  const exportHeaders = [
-    { key: "fecha", label: "Fecha" },
-    { key: "total", label: "Total" },
-    { key: "metodo_pago", label: "Método de Pago" },
-    { key: "detalles", label: "Detalles (Productos)" },
-  ] as const
-
-  const formatDetailsForExport = (details: VentaItem[]) => {
-    return details.map((item) => `${item.nombre} (x${item.cantidad})`).join("; ")
-  }
-
-  const exportableVentas = ventas.map((venta) => ({
-    ...venta,
-    detalles: formatDetailsForExport(venta.detalles),
-  }))
+  const salesHeaders = [
+    { key: "sale_date", label: "Fecha" },
+    { key: "total_amount", label: "Total" },
+    { key: "payment_method", label: "Método de Pago" },
+  ] as const // Use 'as const' for type inference
 
   if (loading) {
     return (
-      <div className="flex justify-center items-center h-64">
+      <div className="flex items-center justify-center p-8">
         <LoadingSpinner />
+        <p className="ml-2">Cargando historial de ventas...</p>
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="p-8 text-red-500">
+        <p>Error al cargar historial de ventas: {error.message}</p>
       </div>
     )
   }
 
   return (
-    <Card>
-      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-        <CardTitle className="text-2xl font-bold">Historial de Ventas</CardTitle>
-        <ExportButton data={exportableVentas} filename="historial_ventas" headers={exportHeaders} />
-      </CardHeader>
-      <CardContent>
-        {ventas.length === 0 ? (
-          <p className="text-center text-muted-foreground">No hay ventas registradas aún.</p>
-        ) : (
-          <div className="overflow-x-auto">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Fecha</TableHead>
-                  <TableHead>Total</TableHead>
-                  <TableHead>Método de Pago</TableHead>
-                  <TableHead>Detalles</TableHead>
+    <div className="grid gap-6">
+      <div className="rounded-lg border shadow-sm">
+        <div className="flex items-center justify-between p-4">
+          <h3 className="text-lg font-semibold">Listado de Ventas</h3>
+          <ExportButton
+            data={sales.map((sale) => ({
+              ...sale,
+              sale_date: format(new Date(sale.sale_date), "dd/MM/yyyy HH:mm", { locale: es }),
+              total_amount: sale.total_amount.toFixed(2),
+            }))}
+            headers={salesHeaders}
+            filename="historial_ventas"
+          />
+        </div>
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Fecha</TableHead>
+              <TableHead>Total</TableHead>
+              <TableHead>Método de Pago</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {sales.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={3} className="h-24 text-center">
+                  No hay ventas registradas.
+                </TableCell>
+              </TableRow>
+            ) : (
+              sales.map((sale) => (
+                <TableRow key={sale.id}>
+                  <TableCell>{format(new Date(sale.sale_date), "dd/MM/yyyy HH:mm", { locale: es })}</TableCell>
+                  <TableCell>${sale.total_amount.toFixed(2)}</TableCell>
+                  <TableCell>{sale.payment_method || "-"}</TableCell>
                 </TableRow>
-              </TableHeader>
-              <TableBody>
-                {ventas.map((venta) => (
-                  <TableRow key={venta.id}>
-                    <TableCell>{format(new Date(venta.fecha), "dd/MM/yyyy", { locale: es })}</TableCell>
-                    <TableCell>{venta.total.toFixed(2)}</TableCell>
-                    <TableCell>{venta.metodo_pago}</TableCell>
-                    <TableCell>
-                      <ul className="list-disc pl-4">
-                        {venta.detalles.map((item, index) => (
-                          <li key={index}>
-                            {item.nombre} (x{item.cantidad}) - {item.precio_unitario.toFixed(2)}
-                          </li>
-                        ))}
-                      </ul>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
-        )}
-      </CardContent>
-    </Card>
+              ))
+            )}
+          </TableBody>
+        </Table>
+      </div>
+    </div>
   )
 }
