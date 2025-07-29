@@ -1,468 +1,212 @@
 "use client"
 
-import { useState } from "react"
-import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Input } from "@/components/ui/input"
+import type React from "react"
+
+import { useState, useEffect } from "react"
+import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card"
 import { Label } from "@/components/ui/label"
-import { Badge } from "@/components/ui/badge"
-import { TrendingDown, Plus, Edit, Trash2, Search, Filter, Calendar, Receipt } from "lucide-react"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
+import { Input } from "@/components/ui/input"
+import { Button } from "@/components/ui/button"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Textarea } from "@/components/ui/textarea"
+import { Table, TableHeader, TableRow, TableHead, TableBody, TableCell } from "@/components/ui/table"
+import { useAuth } from "@/hooks/use-auth"
+import { createClient } from "@/lib/supabase"
+import { useToast } from "@/hooks/use-toast"
+import { format } from "date-fns"
+import { es } from "date-fns/locale"
+import { LoadingSpinner } from "./loading-spinner"
+import { ExportButton } from "./export-button"
 
 interface Gasto {
-  id: number
+  id: string
   fecha: string
-  concepto: string
-  categoria: string
   monto: number
   descripcion: string
-  metodoPago: "efectivo" | "tarjeta" | "transferencia"
-  proveedor?: string
-  comprobante?: string
+  categoria: string
+  created_at: string
 }
 
-export default function Gastos() {
-  const [gastos, setGastos] = useState<Gasto[]>([
-    {
-      id: 1,
-      fecha: "26/01/2025",
-      concepto: "Compra de bebidas",
-      categoria: "Mercadería",
-      monto: 2500,
-      descripcion: "Coca Cola, Agua Mineral, Cerveza",
-      metodoPago: "transferencia",
-      proveedor: "Distribuidora Sur",
-      comprobante: "FC-001-00001234",
-    },
-    {
-      id: 2,
-      fecha: "25/01/2025",
-      concepto: "Servicio de limpieza",
-      categoria: "Servicios",
-      monto: 800,
-      descripcion: "Limpieza semanal del local",
-      metodoPago: "efectivo",
-    },
-    {
-      id: 3,
-      fecha: "24/01/2025",
-      concepto: "Reparación de equipos",
-      categoria: "Mantenimiento",
-      monto: 1200,
-      descripcion: "Reparación de máquina de café",
-      metodoPago: "tarjeta",
-      comprobante: "FC-002-00005678",
-    },
-    {
-      id: 4,
-      fecha: "23/01/2025",
-      concepto: "Pago de alquiler",
-      categoria: "Alquiler",
-      monto: 45000,
-      descripcion: "Alquiler mensual del local",
-      metodoPago: "transferencia",
-      comprobante: "REC-001-00000123",
-    },
-    {
-      id: 5,
-      fecha: "22/01/2025",
-      concepto: "Compra de ingredientes",
-      categoria: "Mercadería",
-      monto: 1800,
-      descripcion: "Carne, pan, papas para hamburguesas",
-      metodoPago: "efectivo",
-      proveedor: "Carnicería Central",
-    },
-  ])
+export function Gastos() {
+  const supabase = createClient()
+  const { user } = useAuth()
+  const { toast } = useToast()
 
-  const [showNuevoGasto, setShowNuevoGasto] = useState(false)
-  const [showEditarGasto, setShowEditarGasto] = useState(false)
-  const [gastoEditando, setGastoEditando] = useState<Gasto | null>(null)
-  const [filtroCategoria, setFiltroCategoria] = useState("all")
-  const [filtroMetodo, setFiltroMetodo] = useState("all")
-  const [busqueda, setBusqueda] = useState("")
+  const [fecha, setFecha] = useState(format(new Date(), "yyyy-MM-dd"))
+  const [monto, setMonto] = useState<number>(0)
+  const [descripcion, setDescripcion] = useState("")
+  const [categoria, setCategoria] = useState("")
+  const [gastos, setGastos] = useState<Gasto[]>([])
+  const [loading, setLoading] = useState(true)
+  const [submitting, setSubmitting] = useState(false)
 
-  const [nuevoGasto, setNuevoGasto] = useState({
-    concepto: "",
-    categoria: "Mercadería",
-    monto: 0,
-    descripcion: "",
-    metodoPago: "efectivo" as const,
-    proveedor: "",
-    comprobante: "",
-  })
+  const categoriasGastos = ["Alquiler", "Servicios", "Salarios", "Mantenimiento", "Marketing", "Suministros", "Otros"]
 
-  const gastosFiltrados = gastos.filter((gasto) => {
-    const cumpleCategoria = filtroCategoria === "all" || gasto.categoria === filtroCategoria
-    const cumpleMetodo = filtroMetodo === "all" || gasto.metodoPago === filtroMetodo
-    const cumpleBusqueda =
-      !busqueda ||
-      gasto.concepto.toLowerCase().includes(busqueda.toLowerCase()) ||
-      gasto.descripcion.toLowerCase().includes(busqueda.toLowerCase()) ||
-      (gasto.proveedor && gasto.proveedor.toLowerCase().includes(busqueda.toLowerCase()))
+  useEffect(() => {
+    if (user) {
+      fetchGastos()
+    }
+  }, [user])
 
-    return cumpleCategoria && cumpleMetodo && cumpleBusqueda
-  })
+  const fetchGastos = async () => {
+    setLoading(true)
+    const { data, error } = await supabase
+      .from("gastos")
+      .select("*")
+      .eq("user_id", user?.id)
+      .order("fecha", { ascending: false })
+      .order("created_at", { ascending: false })
 
-  const categorias = [...new Set(gastos.map((g) => g.categoria))]
-  const totalGastos = gastosFiltrados.reduce((sum, gasto) => sum + gasto.monto, 0)
-  const gastosHoy = gastos
-    .filter((g) => g.fecha === new Date().toLocaleDateString("es-AR"))
-    .reduce((sum, gasto) => sum + gasto.monto, 0)
-  const gastosMes = gastos.reduce((sum, gasto) => sum + gasto.monto, 0)
+    if (error) {
+      toast({
+        title: "Error al cargar gastos",
+        description: error.message,
+        variant: "destructive",
+      })
+    } else {
+      setGastos(data || [])
+    }
+    setLoading(false)
+  }
 
-  const agregarGasto = () => {
-    const gasto: Gasto = {
-      id: Date.now(),
-      ...nuevoGasto,
-      fecha: new Date().toLocaleDateString("es-AR"),
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!user) {
+      toast({
+        title: "Error",
+        description: "Debes iniciar sesión para registrar un gasto.",
+        variant: "destructive",
+      })
+      return
     }
 
-    setGastos([gasto, ...gastos])
-    setNuevoGasto({
-      concepto: "",
-      categoria: "Mercadería",
-      monto: 0,
-      descripcion: "",
-      metodoPago: "efectivo",
-      proveedor: "",
-      comprobante: "",
+    setSubmitting(true)
+    const { data, error } = await supabase.from("gastos").insert({
+      user_id: user.id,
+      fecha: fecha,
+      monto: monto,
+      descripcion: descripcion,
+      categoria: categoria,
     })
-    setShowNuevoGasto(false)
+
+    if (error) {
+      toast({
+        title: "Error al registrar gasto",
+        description: error.message,
+        variant: "destructive",
+      })
+    } else {
+      toast({
+        title: "Gasto registrado",
+        description: "El gasto ha sido guardado exitosamente.",
+        variant: "default",
+      })
+      // Clear form and refetch
+      setMonto(0)
+      setDescripcion("")
+      setCategoria("")
+      setFecha(format(new Date(), "yyyy-MM-dd"))
+      fetchGastos()
+    }
+    setSubmitting(false)
   }
 
-  const editarGasto = () => {
-    if (!gastoEditando) return
+  const exportHeaders = [
+    { key: "fecha", label: "Fecha" },
+    { key: "monto", label: "Monto" },
+    { key: "descripcion", label: "Descripción" },
+    { key: "categoria", label: "Categoría" },
+  ] as const // 'as const' for type safety
 
-    setGastos(gastos.map((g) => (g.id === gastoEditando.id ? gastoEditando : g)))
-    setShowEditarGasto(false)
-    setGastoEditando(null)
-  }
-
-  const eliminarGasto = (id: number) => {
-    setGastos(gastos.filter((g) => g.id !== id))
+  if (loading) {
+    return (
+      <div className="flex justify-center items-center h-64">
+        <LoadingSpinner />
+      </div>
+    )
   }
 
   return (
     <div className="space-y-6">
-      {/* Resumen */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <Card>
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-muted-foreground">Gastos Hoy</p>
-                <p className="text-2xl font-bold text-red-600">${gastosHoy}</p>
-              </div>
-              <TrendingDown className="h-8 w-8 text-red-500" />
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-muted-foreground">Gastos del Mes</p>
-                <p className="text-2xl font-bold text-red-600">${gastosMes}</p>
-              </div>
-              <Calendar className="h-8 w-8 text-orange-500" />
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-muted-foreground">Total Filtrado</p>
-                <p className="text-2xl font-bold">${totalGastos}</p>
-              </div>
-              <Filter className="h-8 w-8 text-blue-500" />
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-muted-foreground">Transacciones</p>
-                <p className="text-2xl font-bold">{gastosFiltrados.length}</p>
-              </div>
-              <Receipt className="h-8 w-8 text-purple-500" />
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Gestión de Gastos */}
       <Card>
-        <CardHeader className="flex flex-row items-center justify-between">
-          <CardTitle>Gestión de Gastos</CardTitle>
-          <Dialog open={showNuevoGasto} onOpenChange={setShowNuevoGasto}>
-            <DialogTrigger asChild>
-              <Button>
-                <Plus className="h-4 w-4 mr-2" />
-                Nuevo Gasto
-              </Button>
-            </DialogTrigger>
-            <DialogContent className="max-w-md">
-              <DialogHeader>
-                <DialogTitle>Registrar Nuevo Gasto</DialogTitle>
-              </DialogHeader>
-              <div className="space-y-4">
-                <div>
-                  <Label htmlFor="concepto">Concepto</Label>
-                  <Input
-                    id="concepto"
-                    value={nuevoGasto.concepto}
-                    onChange={(e) => setNuevoGasto({ ...nuevoGasto, concepto: e.target.value })}
-                    placeholder="Ej: Compra de bebidas"
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="categoria">Categoría</Label>
-                  <Select
-                    value={nuevoGasto.categoria}
-                    onValueChange={(value) => setNuevoGasto({ ...nuevoGasto, categoria: value })}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Selecciona una categoría" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="Mercadería">Mercadería</SelectItem>
-                      <SelectItem value="Servicios">Servicios</SelectItem>
-                      <SelectItem value="Mantenimiento">Mantenimiento</SelectItem>
-                      <SelectItem value="Alquiler">Alquiler</SelectItem>
-                      <SelectItem value="Impuestos">Impuestos</SelectItem>
-                      <SelectItem value="Marketing">Marketing</SelectItem>
-                      <SelectItem value="Otros">Otros</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div>
-                  <Label htmlFor="monto">Monto</Label>
-                  <Input
-                    id="monto"
-                    type="number"
-                    value={nuevoGasto.monto}
-                    onChange={(e) => setNuevoGasto({ ...nuevoGasto, monto: Number.parseFloat(e.target.value) || 0 })}
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="metodoPago">Método de Pago</Label>
-                  <Select
-                    value={nuevoGasto.metodoPago}
-                    onValueChange={(value: any) => setNuevoGasto({ ...nuevoGasto, metodoPago: value })}
-                  >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="efectivo">Efectivo</SelectItem>
-                      <SelectItem value="tarjeta">Tarjeta</SelectItem>
-                      <SelectItem value="transferencia">Transferencia</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div>
-                  <Label htmlFor="proveedor">Proveedor (Opcional)</Label>
-                  <Input
-                    id="proveedor"
-                    value={nuevoGasto.proveedor}
-                    onChange={(e) => setNuevoGasto({ ...nuevoGasto, proveedor: e.target.value })}
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="comprobante">N° Comprobante (Opcional)</Label>
-                  <Input
-                    id="comprobante"
-                    value={nuevoGasto.comprobante}
-                    onChange={(e) => setNuevoGasto({ ...nuevoGasto, comprobante: e.target.value })}
-                    placeholder="Ej: FC-001-00001234"
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="descripcion">Descripción</Label>
-                  <Textarea
-                    id="descripcion"
-                    value={nuevoGasto.descripcion}
-                    onChange={(e) => setNuevoGasto({ ...nuevoGasto, descripcion: e.target.value })}
-                    placeholder="Detalle del gasto..."
-                  />
-                </div>
-                <Button onClick={agregarGasto} className="w-full">
-                  Registrar Gasto
-                </Button>
-              </div>
-            </DialogContent>
-          </Dialog>
+        <CardHeader>
+          <CardTitle>Registrar Nuevo Gasto</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
-            <div className="relative">
-              <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+          <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="fecha">Fecha</Label>
+              <Input id="fecha" type="date" value={fecha} onChange={(e) => setFecha(e.target.value)} required />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="monto">Monto</Label>
               <Input
-                placeholder="Buscar gastos..."
-                value={busqueda}
-                onChange={(e) => setBusqueda(e.target.value)}
-                className="pl-10"
+                id="monto"
+                type="number"
+                step="0.01"
+                value={monto}
+                onChange={(e) => setMonto(Number.parseFloat(e.target.value))}
+                required
               />
             </div>
-
-            <Select value={filtroCategoria} onValueChange={setFiltroCategoria}>
-              <SelectTrigger>
-                <SelectValue placeholder="Filtrar por categoría" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Todas las categorías</SelectItem>
-                {categorias.map((categoria) => (
-                  <SelectItem key={categoria} value={categoria}>
-                    {categoria}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-
-            <Select value={filtroMetodo} onValueChange={setFiltroMetodo}>
-              <SelectTrigger>
-                <SelectValue placeholder="Método de pago" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Todos</SelectItem>
-                <SelectItem value="efectivo">Efectivo</SelectItem>
-                <SelectItem value="tarjeta">Tarjeta</SelectItem>
-                <SelectItem value="transferencia">Transferencia</SelectItem>
-              </SelectContent>
-            </Select>
-
-            <Button variant="outline">
-              <Filter className="h-4 w-4 mr-2" />
-              Más Filtros
+            <div className="space-y-2">
+              <Label htmlFor="categoria">Categoría</Label>
+              <Select value={categoria} onValueChange={setCategoria} required>
+                <SelectTrigger id="categoria">
+                  <SelectValue placeholder="Selecciona una categoría" />
+                </SelectTrigger>
+                <SelectContent>
+                  {categoriasGastos.map((cat) => (
+                    <SelectItem key={cat} value={cat}>
+                      {cat}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2 md:col-span-2">
+              <Label htmlFor="descripcion">Descripción</Label>
+              <Input id="descripcion" value={descripcion} onChange={(e) => setDescripcion(e.target.value)} required />
+            </div>
+            <Button type="submit" className="md:col-span-2" disabled={submitting}>
+              {submitting ? <LoadingSpinner className="mr-2" /> : null}
+              Registrar Gasto
             </Button>
-          </div>
+          </form>
+        </CardContent>
+      </Card>
 
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Fecha</TableHead>
-                <TableHead>Concepto</TableHead>
-                <TableHead>Categoría</TableHead>
-                <TableHead>Monto</TableHead>
-                <TableHead>Método</TableHead>
-                <TableHead>Proveedor</TableHead>
-                <TableHead>Acciones</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {gastosFiltrados.map((gasto) => (
-                <TableRow key={gasto.id}>
-                  <TableCell>{gasto.fecha}</TableCell>
-                  <TableCell>
-                    <div>
-                      <div className="font-medium">{gasto.concepto}</div>
-                      <div className="text-sm text-muted-foreground">{gasto.descripcion}</div>
-                      {gasto.comprobante && <div className="text-xs text-blue-600">{gasto.comprobante}</div>}
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    <Badge variant="outline">{gasto.categoria}</Badge>
-                  </TableCell>
-                  <TableCell className="font-medium text-red-600">-${gasto.monto}</TableCell>
-                  <TableCell className="capitalize">{gasto.metodoPago}</TableCell>
-                  <TableCell>{gasto.proveedor || "-"}</TableCell>
-                  <TableCell>
-                    <div className="flex gap-2">
-                      <Dialog open={showEditarGasto} onOpenChange={setShowEditarGasto}>
-                        <DialogTrigger asChild>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => {
-                              setGastoEditando(gasto)
-                              setShowEditarGasto(true)
-                            }}
-                          >
-                            <Edit className="h-4 w-4" />
-                          </Button>
-                        </DialogTrigger>
-                        <DialogContent className="max-w-md">
-                          <DialogHeader>
-                            <DialogTitle>Editar Gasto</DialogTitle>
-                          </DialogHeader>
-                          {gastoEditando && (
-                            <div className="space-y-4">
-                              <div>
-                                <Label htmlFor="editConcepto">Concepto</Label>
-                                <Input
-                                  id="editConcepto"
-                                  value={gastoEditando.concepto}
-                                  onChange={(e) => setGastoEditando({ ...gastoEditando, concepto: e.target.value })}
-                                />
-                              </div>
-                              <div>
-                                <Label htmlFor="editCategoria">Categoría</Label>
-                                <Select
-                                  value={gastoEditando.categoria}
-                                  onValueChange={(value) => setGastoEditando({ ...gastoEditando, categoria: value })}
-                                >
-                                  <SelectTrigger>
-                                    <SelectValue />
-                                  </SelectTrigger>
-                                  <SelectContent>
-                                    <SelectItem value="Mercadería">Mercadería</SelectItem>
-                                    <SelectItem value="Servicios">Servicios</SelectItem>
-                                    <SelectItem value="Mantenimiento">Mantenimiento</SelectItem>
-                                    <SelectItem value="Alquiler">Alquiler</SelectItem>
-                                    <SelectItem value="Impuestos">Impuestos</SelectItem>
-                                    <SelectItem value="Marketing">Marketing</SelectItem>
-                                    <SelectItem value="Otros">Otros</SelectItem>
-                                  </SelectContent>
-                                </Select>
-                              </div>
-                              <div>
-                                <Label htmlFor="editMonto">Monto</Label>
-                                <Input
-                                  id="editMonto"
-                                  type="number"
-                                  value={gastoEditando.monto}
-                                  onChange={(e) =>
-                                    setGastoEditando({
-                                      ...gastoEditando,
-                                      monto: Number.parseFloat(e.target.value) || 0,
-                                    })
-                                  }
-                                />
-                              </div>
-                              <div>
-                                <Label htmlFor="editDescripcion">Descripción</Label>
-                                <Textarea
-                                  id="editDescripcion"
-                                  value={gastoEditando.descripcion}
-                                  onChange={(e) => setGastoEditando({ ...gastoEditando, descripcion: e.target.value })}
-                                />
-                              </div>
-                              <Button onClick={editarGasto} className="w-full">
-                                Guardar Cambios
-                              </Button>
-                            </div>
-                          )}
-                        </DialogContent>
-                      </Dialog>
-
-                      <Button variant="destructive" size="sm" onClick={() => eliminarGasto(gasto.id)}>
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+          <CardTitle className="text-2xl font-bold">Historial de Gastos</CardTitle>
+          <ExportButton data={gastos} filename="gastos" headers={exportHeaders} />
+        </CardHeader>
+        <CardContent>
+          {gastos.length === 0 ? (
+            <p className="text-center text-muted-foreground">No hay gastos registrados aún.</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Fecha</TableHead>
+                    <TableHead>Monto</TableHead>
+                    <TableHead>Descripción</TableHead>
+                    <TableHead>Categoría</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {gastos.map((gasto) => (
+                    <TableRow key={gasto.id}>
+                      <TableCell>{format(new Date(gasto.fecha), "dd/MM/yyyy", { locale: es })}</TableCell>
+                      <TableCell>{gasto.monto.toFixed(2)}</TableCell>
+                      <TableCell>{gasto.descripcion}</TableCell>
+                      <TableCell>{gasto.categoria}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>

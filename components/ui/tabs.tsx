@@ -1,4 +1,3 @@
-// components/ui/tabs.tsx (Componente de shadcn/ui)
 "use client"
 
 import * as React from "react"

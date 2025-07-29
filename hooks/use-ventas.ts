@@ -1,93 +1,114 @@
 "use client"
 
-import { useState, useEffect } from "react"
-import { supabase } from "@/lib/supabase"
+import { useState, useEffect, useCallback } from "react"
+import { createClient } from "@/lib/supabase"
 import { useToast } from "@/hooks/use-toast"
-import type { Venta } from "@/lib/supabase"
+import { useAuth } from "./use-auth"
+
+interface VentaItem {
+  producto_id: string
+  nombre: string
+  cantidad: number
+  precio_unitario: number
+}
+
+interface Venta {
+  id: string
+  fecha: string
+  total: number
+  metodo_pago: string
+  detalles: VentaItem[]
+  created_at: string
+}
 
 export function useVentas() {
-  const [ventas, setVentas] = useState<Venta[]>([])
-  const [loading, setLoading] = useState(true)
+  const supabase = createClient()
+  const { user } = useAuth()
   const { toast } = useToast()
 
-  const fetchVentas = async () => {
-    try {
-      setLoading(true)
-      const { data, error } = await supabase.from("ventas").select("*").order("created_at", { ascending: false })
+  const [ventas, setVentas] = useState<Venta[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<Error | null>(null)
 
-      if (error) throw error
-
-      setVentas(data || [])
-    } catch (error: any) {
-      toast({
-        title: "Error",
-        description: "No se pudieron cargar las ventas",
-        variant: "destructive",
-      })
-    } finally {
+  const fetchVentas = useCallback(async () => {
+    if (!user) {
       setLoading(false)
+      return
     }
-  }
+    setLoading(true)
+    setError(null)
+    const { data, error: fetchError } = await supabase
+      .from("ventas")
+      .select("*")
+      .eq("user_id", user.id)
+      .order("fecha", { ascending: false })
+      .order("created_at", { ascending: false })
 
-  const agregarVenta = async (venta: Omit<Venta, "id" | "created_at" | "usuario_id" | "negocio_id">) => {
-    try {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser()
-      if (!user) throw new Error("No autenticado")
-
-      // Obtener negocio_id del usuario
-      const { data: userData } = await supabase.from("usuarios").select("negocio_id").eq("id", user.id).single()
-
-      const { data, error } = await supabase
-        .from("ventas")
-        .insert([
-          {
-            ...venta,
-            usuario_id: user.id,
-            negocio_id: userData?.negocio_id,
-          },
-        ])
-        .select()
-        .single()
-
-      if (error) throw error
-
-      setVentas([data, ...ventas])
-
-      // Actualizar stock de productos vendidos
-      for (const item of venta.items) {
-        await supabase.rpc("actualizar_stock", {
-          producto_id: item.producto_id,
-          cantidad_vendida: item.cantidad,
-        })
-      }
-
+    if (fetchError) {
+      setError(fetchError)
       toast({
-        title: "Venta registrada",
-        description: `Venta por $${venta.total} registrada correctamente`,
-        variant: "success",
-      })
-
-      return true
-    } catch (error: any) {
-      toast({
-        title: "Error",
-        description: error.message || "No se pudo registrar la venta",
+        title: "Error al cargar ventas",
+        description: fetchError.message,
         variant: "destructive",
       })
-      return false
+    } else {
+      setVentas(data || [])
     }
-  }
+    setLoading(false)
+  }, [supabase, user, toast])
 
   useEffect(() => {
     fetchVentas()
-  }, [])
+  }, [fetchVentas])
 
-  return {
-    ventas,
-    loading,
-    agregarVenta,
-    refetch: fetchVentas,
+  const addVenta = async (newVenta: Omit<Venta, "id" | "created_at">) => {
+    if (!user) {
+      toast({
+        title: "Error",
+        description: "Debes iniciar sesión para registrar una venta.",
+        variant: "destructive",
+      })
+      return
+    }
+    const { data, error: insertError } = await supabase.from("ventas").insert({
+      ...newVenta,
+      user_id: user.id,
+    })
+    if (insertError) {
+      toast({
+        title: "Error al registrar venta",
+        description: insertError.message,
+        variant: "destructive",
+      })
+      return null
+    } else {
+      toast({
+        title: "Venta registrada",
+        description: "La venta ha sido guardada exitosamente.",
+      })
+      fetchVentas() // Refresh the list
+      return data
+    }
   }
+
+  const deleteVenta = async (id: string) => {
+    const { error: deleteError } = await supabase.from("ventas").delete().eq("id", id)
+    if (deleteError) {
+      toast({
+        title: "Error al eliminar venta",
+        description: deleteError.message,
+        variant: "destructive",
+      })
+      return false
+    } else {
+      toast({
+        title: "Venta eliminada",
+        description: "La venta ha sido eliminada exitosamente.",
+      })
+      fetchVentas() // Refresh the list
+      return true
+    }
+  }
+
+  return { ventas, loading, error, addVenta, deleteVenta, fetchVentas }
 }

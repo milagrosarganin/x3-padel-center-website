@@ -1,363 +1,279 @@
 "use client"
 
-import { useState } from "react"
-import { Button } from "@/components/ui/button"
+import { useState, useEffect } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Input } from "@/components/ui/input"
-import { Badge } from "@/components/ui/badge"
-import { Separator } from "@/components/ui/separator"
-import { Plus, Minus, Trash2, CreditCard, Banknote, Users, Clock, Search, ArrowLeftRight } from "lucide-react"
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Label } from "@/components/ui/label"
+import { Input } from "@/components/ui/input"
+import { Button } from "@/components/ui/button"
+import { Table, TableHeader, TableRow, TableHead, TableBody, TableCell } from "@/components/ui/table"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { useToast } from "@/hooks/use-toast"
+import { createClient } from "@/lib/supabase"
+import { LoadingSpinner } from "./loading-spinner"
+import { format } from "date-fns"
 
 interface Producto {
-  id: number
+  id: string
   nombre: string
   precio: number
-  categoria: string
+  stock: number
 }
 
-interface ItemVenta {
-  producto: Producto
+interface VentaItem {
+  producto_id: string
+  nombre: string
   cantidad: number
-  subtotal: number
+  precio_unitario: number
 }
 
-interface Mesa {
-  id: number
-  numero: string
-  items: ItemVenta[]
-  total: number
-  estado: "abierta" | "cerrada"
-  horaApertura: string
-}
+const METODOS_PAGO = ["Efectivo", "Tarjeta", "Transferencia", "Otro"]
 
-export default function Mostrador() {
-  const [mesas, setMesas] = useState<Mesa[]>([
-    {
-      id: 1,
-      numero: "Mesa 1",
-      items: [
-        { producto: { id: 1, nombre: "Coca Cola", precio: 150, categoria: "Bebidas" }, cantidad: 2, subtotal: 300 },
-      ],
-      total: 300,
-      estado: "abierta",
-      horaApertura: "14:30",
-    },
-    {
-      id: 2,
-      numero: "Mesa 2",
-      items: [
-        { producto: { id: 2, nombre: "Hamburguesa", precio: 850, categoria: "Comida" }, cantidad: 1, subtotal: 850 },
-        { producto: { id: 1, nombre: "Coca Cola", precio: 150, categoria: "Bebidas" }, cantidad: 1, subtotal: 150 },
-      ],
-      total: 1000,
-      estado: "abierta",
-      horaApertura: "15:15",
-    },
-  ])
+export function Mostrador() {
+  const supabase = createClient()
+  const { toast } = useToast()
 
-  const [mesaSeleccionada, setMesaSeleccionada] = useState<Mesa | null>(null)
-  const [showNuevaMesa, setShowNuevaMesa] = useState(false)
-  const [numeroNuevaMesa, setNumeroNuevaMesa] = useState("")
-  const [busquedaProducto, setBusquedaProducto] = useState("")
+  const [productos, setProductos] = useState<Producto[]>([])
+  const [loadingProductos, setLoadingProductos] = useState(true)
+  const [searchTerm, setSearchTerm] = useState("")
+  const [carrito, setCarrito] = useState<VentaItem[]>([])
+  const [metodoPago, setMetodoPago] = useState<string>(METODOS_PAGO[0])
+  const [isProcessingSale, setIsProcessingSale] = useState(false)
 
-  const productos: Producto[] = [
-    { id: 1, nombre: "Coca Cola", precio: 150, categoria: "Bebidas" },
-    { id: 2, nombre: "Agua Mineral", precio: 100, categoria: "Bebidas" },
-    { id: 3, nombre: "Hamburguesa", precio: 850, categoria: "Comida" },
-    { id: 4, nombre: "Pizza", precio: 1200, categoria: "Comida" },
-    { id: 5, nombre: "Papas Fritas", precio: 400, categoria: "Comida" },
-    { id: 6, nombre: "Cerveza", precio: 200, categoria: "Bebidas" },
-    { id: 7, nombre: "Sandwich", precio: 650, categoria: "Comida" },
-    { id: 8, nombre: "Café", precio: 120, categoria: "Bebidas" },
-    { id: 9, nombre: "Empanadas", precio: 180, categoria: "Comida" },
-    { id: 10, nombre: "Jugo Natural", precio: 180, categoria: "Bebidas" },
-  ]
+  useEffect(() => {
+    fetchProductos()
+  }, [])
 
-  const productosFiltrados = productos.filter(
-    (producto) =>
-      producto.nombre.toLowerCase().includes(busquedaProducto.toLowerCase()) ||
-      producto.categoria.toLowerCase().includes(busquedaProducto.toLowerCase()),
+  const fetchProductos = async () => {
+    setLoadingProductos(true)
+    const { data, error } = await supabase.from("productos").select("*").order("nombre", { ascending: true })
+
+    if (error) {
+      toast({
+        title: "Error",
+        description: `Error al cargar productos: ${error.message}`,
+        variant: "destructive",
+      })
+    } else {
+      setProductos(data || [])
+    }
+    setLoadingProductos(false)
+  }
+
+  const filteredProductos = productos.filter((producto) =>
+    producto.nombre.toLowerCase().includes(searchTerm.toLowerCase()),
   )
 
-  const crearNuevaMesa = () => {
-    if (!numeroNuevaMesa.trim()) return
+  const agregarAlCarrito = (producto: Producto) => {
+    setCarrito((prevCarrito) => {
+      const itemExistente = prevCarrito.find((item) => item.producto_id === producto.id)
+      if (itemExistente) {
+        return prevCarrito.map((item) =>
+          item.producto_id === producto.id ? { ...item, cantidad: item.cantidad + 1 } : item,
+        )
+      } else {
+        return [
+          ...prevCarrito,
+          { producto_id: producto.id, nombre: producto.nombre, cantidad: 1, precio_unitario: producto.precio },
+        ]
+      }
+    })
+  }
 
-    const nuevaMesa: Mesa = {
-      id: Date.now(),
-      numero: numeroNuevaMesa,
-      items: [],
-      total: 0,
-      estado: "abierta",
-      horaApertura: new Date().toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit" }),
+  const quitarDelCarrito = (productoId: string) => {
+    setCarrito((prevCarrito) => prevCarrito.filter((item) => item.producto_id !== productoId))
+  }
+
+  const ajustarCantidad = (productoId: string, cantidad: number) => {
+    setCarrito((prevCarrito) =>
+      prevCarrito.map((item) => (item.producto_id === productoId ? { ...item, cantidad: cantidad } : item)),
+    )
+  }
+
+  const totalCarrito = carrito.reduce((sum, item) => sum + item.cantidad * item.precio_unitario, 0)
+
+  const procesarVenta = async () => {
+    if (carrito.length === 0) {
+      toast({
+        title: "Error",
+        description: "El carrito está vacío.",
+        variant: "destructive",
+      })
+      return
     }
 
-    setMesas([...mesas, nuevaMesa])
-    setNumeroNuevaMesa("")
-    setShowNuevaMesa(false)
-  }
+    setIsProcessingSale(true)
 
-  const agregarProducto = (producto: Producto) => {
-    if (!mesaSeleccionada) return
+    // 1. Registrar la venta
+    const { data: ventaData, error: ventaError } = await supabase
+      .from("ventas")
+      .insert({
+        fecha: format(new Date(), "yyyy-MM-dd"),
+        total: totalCarrito,
+        metodo_pago: metodoPago,
+        user_id: (await supabase.auth.getUser()).data.user?.id, // Assuming user is logged in
+      })
+      .select()
 
-    const mesasActualizadas = mesas.map((mesa) => {
-      if (mesa.id === mesaSeleccionada.id) {
-        const itemExistente = mesa.items.find((item) => item.producto.id === producto.id)
+    if (ventaError) {
+      toast({
+        title: "Error",
+        description: `Error al registrar la venta: ${ventaError.message}`,
+        variant: "destructive",
+      })
+      setIsProcessingSale(false)
+      return
+    }
 
-        if (itemExistente) {
-          const itemsActualizados = mesa.items.map((item) =>
-            item.producto.id === producto.id
-              ? { ...item, cantidad: item.cantidad + 1, subtotal: (item.cantidad + 1) * producto.precio }
-              : item,
-          )
-          const nuevoTotal = itemsActualizados.reduce((sum, item) => sum + item.subtotal, 0)
-          return { ...mesa, items: itemsActualizados, total: nuevoTotal }
-        } else {
-          const nuevoItem: ItemVenta = {
-            producto,
-            cantidad: 1,
-            subtotal: producto.precio,
-          }
-          const itemsActualizados = [...mesa.items, nuevoItem]
-          const nuevoTotal = itemsActualizados.reduce((sum, item) => sum + item.subtotal, 0)
-          return { ...mesa, items: itemsActualizados, total: nuevoTotal }
-        }
+    const ventaId = ventaData[0].id
+
+    // 2. Registrar los detalles de la venta y actualizar el stock
+    const detallesVentaPromises = carrito.map(async (item) => {
+      // Insertar detalle de venta
+      const { error: detalleError } = await supabase.from("detalles_venta").insert({
+        venta_id: ventaId,
+        producto_id: item.producto_id,
+        cantidad: item.cantidad,
+        precio_unitario: item.precio_unitario,
+      })
+
+      if (detalleError) {
+        console.error(`Error al guardar detalle de venta para ${item.nombre}:`, detalleError.message)
+        // Consider rollback or partial success handling
       }
-      return mesa
+
+      // Actualizar stock
+      const { error: stockError } = await supabase.rpc("disminuir_stock", {
+        p_producto_id: item.producto_id,
+        p_cantidad: item.cantidad,
+      })
+
+      if (stockError) {
+        console.error(`Error al actualizar stock para ${item.nombre}:`, stockError.message)
+        // Consider rollback or partial success handling
+      }
     })
 
-    setMesas(mesasActualizadas)
-    setMesaSeleccionada(mesasActualizadas.find((m) => m.id === mesaSeleccionada.id) || null)
-  }
+    await Promise.all(detallesVentaPromises)
 
-  const modificarCantidad = (productoId: number, nuevaCantidad: number) => {
-    if (!mesaSeleccionada || nuevaCantidad < 0) return
-
-    const mesasActualizadas = mesas.map((mesa) => {
-      if (mesa.id === mesaSeleccionada.id) {
-        const itemsActualizados = mesa.items
-          .map((item) =>
-            item.producto.id === productoId
-              ? { ...item, cantidad: nuevaCantidad, subtotal: nuevaCantidad * item.producto.precio }
-              : item,
-          )
-          .filter((item) => item.cantidad > 0)
-
-        const nuevoTotal = itemsActualizados.reduce((sum, item) => sum + item.subtotal, 0)
-        return { ...mesa, items: itemsActualizados, total: nuevoTotal }
-      }
-      return mesa
+    toast({
+      title: "Venta Exitosa",
+      description: `Venta por $${totalCarrito.toFixed(2)} registrada correctamente.`,
+      variant: "default",
     })
 
-    setMesas(mesasActualizadas)
-    setMesaSeleccionada(mesasActualizadas.find((m) => m.id === mesaSeleccionada.id) || null)
+    setCarrito([])
+    setMetodoPago(METODOS_PAGO[0])
+    fetchProductos() // Refresh product list to show updated stock
+    setIsProcessingSale(false)
   }
 
-  const cerrarMesa = (metodoPago: string) => {
-    if (!mesaSeleccionada) return
-
-    const mesasActualizadas = mesas.map((mesa) =>
-      mesa.id === mesaSeleccionada.id ? { ...mesa, estado: "cerrada" as const } : mesa,
+  if (loadingProductos) {
+    return (
+      <div className="flex justify-center items-center h-64">
+        <LoadingSpinner />
+      </div>
     )
-
-    setMesas(mesasActualizadas.filter((mesa) => mesa.estado === "abierta"))
-    setMesaSeleccionada(null)
-
-    // Aquí guardarías la venta en el historial
-    console.log(`Mesa cerrada con ${metodoPago}:`, mesaSeleccionada)
   }
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-      {/* Lista de Mesas */}
-      <Card className="lg:col-span-1">
-        <CardHeader className="flex flex-row items-center justify-between">
-          <CardTitle>Mesas Abiertas</CardTitle>
-          <Dialog open={showNuevaMesa} onOpenChange={setShowNuevaMesa}>
-            <DialogTrigger asChild>
-              <Button size="sm">
-                <Plus className="h-4 w-4" />
-              </Button>
-            </DialogTrigger>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>Nueva Mesa</DialogTitle>
-              </DialogHeader>
-              <div className="space-y-4">
-                <div>
-                  <Label htmlFor="numero">Número/Nombre de Mesa</Label>
-                  <Input
-                    id="numero"
-                    value={numeroNuevaMesa}
-                    onChange={(e) => setNumeroNuevaMesa(e.target.value)}
-                    placeholder="Ej: Mesa 5, Cancha 1, etc."
-                  />
-                </div>
-                <Button onClick={crearNuevaMesa} className="w-full">
-                  Crear Mesa
-                </Button>
-              </div>
-            </DialogContent>
-          </Dialog>
-        </CardHeader>
-        <CardContent className="space-y-2">
-          {mesas.map((mesa) => (
-            <Card
-              key={mesa.id}
-              className={`cursor-pointer transition-colors ${
-                mesaSeleccionada?.id === mesa.id ? "ring-2 ring-blue-500" : ""
-              }`}
-              onClick={() => setMesaSeleccionada(mesa)}
-            >
-              <CardContent className="p-4">
-                <div className="flex justify-between items-start">
-                  <div>
-                    <h3 className="font-medium">{mesa.numero}</h3>
-                    <div className="flex items-center text-sm text-muted-foreground mt-1">
-                      <Clock className="h-3 w-3 mr-1" />
-                      {mesa.horaApertura}
-                    </div>
-                  </div>
-                  <div className="text-right">
-                    <div className="font-bold">${mesa.total}</div>
-                    <Badge variant="secondary" className="text-xs">
-                      {mesa.items.length} items
-                    </Badge>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
-        </CardContent>
-      </Card>
-
-      {/* Productos */}
-      <Card className="lg:col-span-1">
+    <div className="grid gap-6 lg:grid-cols-2">
+      <Card>
         <CardHeader>
           <CardTitle>Productos</CardTitle>
-          <div className="relative">
-            <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-            <Input
-              placeholder="Buscar productos..."
-              value={busquedaProducto}
-              onChange={(e) => setBusquedaProducto(e.target.value)}
-              className="pl-10"
-            />
-          </div>
         </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-1 gap-2 max-h-96 overflow-y-auto">
-            {productosFiltrados.map((producto) => (
-              <Card
-                key={producto.id}
-                className="cursor-pointer hover:bg-gray-50 transition-colors"
-                onClick={() => agregarProducto(producto)}
-              >
-                <CardContent className="p-3">
-                  <div className="flex justify-between items-center">
-                    <div>
-                      <h4 className="font-medium">{producto.nombre}</h4>
-                      <Badge variant="outline" className="text-xs">
-                        {producto.categoria}
-                      </Badge>
-                    </div>
-                    <div className="text-right">
-                      <div className="font-bold">${producto.precio}</div>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
+        <CardContent className="space-y-4">
+          <Input placeholder="Buscar producto..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
+          <div className="grid grid-cols-2 gap-4 max-h-[400px] overflow-y-auto">
+            {filteredProductos.length === 0 ? (
+              <p className="col-span-2 text-center text-gray-500">No se encontraron productos.</p>
+            ) : (
+              filteredProductos.map((producto) => (
+                <Button
+                  key={producto.id}
+                  variant="outline"
+                  className="flex flex-col h-auto py-4 bg-transparent"
+                  onClick={() => agregarAlCarrito(producto)}
+                  disabled={producto.stock <= 0}
+                >
+                  <span className="font-semibold">{producto.nombre}</span>
+                  <span className="text-sm text-gray-500 dark:text-gray-400">${producto.precio.toFixed(2)}</span>
+                  <span className="text-xs text-gray-400 dark:text-gray-500">Stock: {producto.stock}</span>
+                </Button>
+              ))
+            )}
           </div>
         </CardContent>
       </Card>
 
-      {/* Detalle de Mesa */}
-      <Card className="lg:col-span-1">
+      <Card>
         <CardHeader>
-          <CardTitle>{mesaSeleccionada ? mesaSeleccionada.numero : "Selecciona una mesa"}</CardTitle>
+          <CardTitle>Carrito de Compras</CardTitle>
         </CardHeader>
-        <CardContent>
-          {mesaSeleccionada ? (
-            <div className="space-y-4">
-              {/* Items de la mesa */}
-              <div className="space-y-2">
-                {mesaSeleccionada.items.map((item, index) => (
-                  <div key={index} className="flex items-center justify-between p-2 bg-gray-50 rounded">
-                    <div className="flex-1">
-                      <div className="font-medium">{item.producto.nombre}</div>
-                      <div className="text-sm text-muted-foreground">${item.producto.precio} c/u</div>
-                    </div>
-                    <div className="flex items-center space-x-2">
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => modificarCantidad(item.producto.id, item.cantidad - 1)}
-                      >
-                        <Minus className="h-3 w-3" />
-                      </Button>
-                      <span className="w-8 text-center">{item.cantidad}</span>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => modificarCantidad(item.producto.id, item.cantidad + 1)}
-                      >
-                        <Plus className="h-3 w-3" />
-                      </Button>
-                      <Button size="sm" variant="destructive" onClick={() => modificarCantidad(item.producto.id, 0)}>
-                        <Trash2 className="h-3 w-3" />
-                      </Button>
-                    </div>
-                    <div className="w-20 text-right font-medium">${item.subtotal}</div>
-                  </div>
-                ))}
-              </div>
-
-              <Separator />
-
-              {/* Total */}
-              <div className="flex justify-between items-center text-lg font-bold">
-                <span>Total:</span>
-                <span>${mesaSeleccionada.total}</span>
-              </div>
-
-              {/* Botones de pago */}
-              <div className="space-y-2">
-                <Button
-                  className="w-full"
-                  onClick={() => cerrarMesa("efectivo")}
-                  disabled={mesaSeleccionada.items.length === 0}
-                >
-                  <Banknote className="h-4 w-4 mr-2" />
-                  Cobrar en Efectivo
-                </Button>
-                <Button
-                  variant="outline"
-                  className="w-full bg-transparent"
-                  onClick={() => cerrarMesa("tarjeta")}
-                  disabled={mesaSeleccionada.items.length === 0}
-                >
-                  <CreditCard className="h-4 w-4 mr-2" />
-                  Cobrar con Tarjeta
-                </Button>
-                <Button
-                  variant="outline"
-                  className="w-full bg-transparent"
-                  onClick={() => cerrarMesa("transferencia")}
-                  disabled={mesaSeleccionada.items.length === 0}
-                >
-                  <ArrowLeftRight className="h-4 w-4 mr-2" />
-                  Cobrar con Transferencia
-                </Button>
-              </div>
-            </div>
+        <CardContent className="space-y-4">
+          {carrito.length === 0 ? (
+            <p className="text-center text-gray-500">El carrito está vacío.</p>
           ) : (
-            <div className="text-center text-muted-foreground py-8">
-              <Users className="h-12 w-12 mx-auto mb-4 opacity-50" />
-              <p>Selecciona una mesa para ver los detalles</p>
-            </div>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Producto</TableHead>
+                  <TableHead>Cantidad</TableHead>
+                  <TableHead className="text-right">Precio</TableHead>
+                  <TableHead className="text-right">Subtotal</TableHead>
+                  <TableHead className="text-center">Acción</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {carrito.map((item) => (
+                  <TableRow key={item.producto_id}>
+                    <TableCell>{item.nombre}</TableCell>
+                    <TableCell>
+                      <Input
+                        type="number"
+                        value={item.cantidad}
+                        onChange={(e) => ajustarCantidad(item.producto_id, Number.parseInt(e.target.value) || 0)}
+                        className="w-20 text-center"
+                        min="1"
+                      />
+                    </TableCell>
+                    <TableCell className="text-right">${item.precio_unitario.toFixed(2)}</TableCell>
+                    <TableCell className="text-right">${(item.cantidad * item.precio_unitario).toFixed(2)}</TableCell>
+                    <TableCell className="text-center">
+                      <Button variant="destructive" size="sm" onClick={() => quitarDelCarrito(item.producto_id)}>
+                        Quitar
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
           )}
+
+          <div className="flex justify-between font-bold text-lg">
+            <span>Total:</span>
+            <span>${totalCarrito.toFixed(2)}</span>
+          </div>
+
+          <div>
+            <Label htmlFor="metodo-pago">Método de Pago</Label>
+            <Select value={metodoPago} onValueChange={setMetodoPago}>
+              <SelectTrigger id="metodo-pago">
+                <SelectValue placeholder="Selecciona un método de pago" />
+              </SelectTrigger>
+              <SelectContent>
+                {METODOS_PAGO.map((metodo) => (
+                  <SelectItem key={metodo} value={metodo}>
+                    {metodo}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <Button onClick={procesarVenta} className="w-full" disabled={carrito.length === 0 || isProcessingSale}>
+            {isProcessingSale ? <LoadingSpinner className="mr-2" /> : null}
+            {isProcessingSale ? "Procesando..." : "Procesar Venta"}
+          </Button>
         </CardContent>
       </Card>
     </div>

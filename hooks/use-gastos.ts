@@ -1,134 +1,107 @@
 "use client"
 
-import { useState, useEffect } from "react"
-import { supabase } from "@/lib/supabase"
+import { useState, useEffect, useCallback } from "react"
+import { createClient } from "@/lib/supabase"
 import { useToast } from "@/hooks/use-toast"
-import type { Gasto } from "@/lib/supabase"
+import { useAuth } from "./use-auth"
+
+interface Gasto {
+  id: string
+  fecha: string
+  monto: number
+  descripcion: string
+  categoria: string
+  created_at: string
+}
 
 export function useGastos() {
-  const [gastos, setGastos] = useState<Gasto[]>([])
-  const [loading, setLoading] = useState(true)
+  const supabase = createClient()
+  const { user } = useAuth()
   const { toast } = useToast()
 
-  const fetchGastos = async () => {
-    try {
-      setLoading(true)
-      const { data, error } = await supabase.from("gastos").select("*").order("created_at", { ascending: false })
+  const [gastos, setGastos] = useState<Gasto[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<Error | null>(null)
 
-      if (error) throw error
-
-      setGastos(data || [])
-    } catch (error: any) {
-      toast({
-        title: "Error",
-        description: "No se pudieron cargar los gastos",
-        variant: "destructive",
-      })
-    } finally {
+  const fetchGastos = useCallback(async () => {
+    if (!user) {
       setLoading(false)
+      return
     }
-  }
+    setLoading(true)
+    setError(null)
+    const { data, error: fetchError } = await supabase
+      .from("gastos")
+      .select("*")
+      .eq("user_id", user.id)
+      .order("fecha", { ascending: false })
+      .order("created_at", { ascending: false })
 
-  const agregarGasto = async (gasto: Omit<Gasto, "id" | "created_at" | "usuario_id" | "negocio_id">) => {
-    try {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser()
-      if (!user) throw new Error("No autenticado")
-
-      // Obtener negocio_id del usuario
-      const { data: userData } = await supabase.from("usuarios").select("negocio_id").eq("id", user.id).single()
-
-      const { data, error } = await supabase
-        .from("gastos")
-        .insert([
-          {
-            ...gasto,
-            usuario_id: user.id,
-            negocio_id: userData?.negocio_id,
-          },
-        ])
-        .select()
-        .single()
-
-      if (error) throw error
-
-      setGastos([data, ...gastos])
+    if (fetchError) {
+      setError(fetchError)
       toast({
-        title: "Gasto registrado",
-        description: `Gasto de $${gasto.monto} registrado correctamente`,
-        variant: "success",
-      })
-
-      return true
-    } catch (error: any) {
-      toast({
-        title: "Error",
-        description: error.message || "No se pudo registrar el gasto",
+        title: "Error al cargar gastos",
+        description: fetchError.message,
         variant: "destructive",
       })
-      return false
+    } else {
+      setGastos(data || [])
     }
-  }
-
-  const actualizarGasto = async (id: string, updates: Partial<Gasto>) => {
-    try {
-      const { data, error } = await supabase.from("gastos").update(updates).eq("id", id).select().single()
-
-      if (error) throw error
-
-      setGastos(gastos.map((g) => (g.id === id ? data : g)))
-      toast({
-        title: "Gasto actualizado",
-        description: "Los cambios se guardaron correctamente",
-        variant: "success",
-      })
-
-      return true
-    } catch (error: any) {
-      toast({
-        title: "Error",
-        description: error.message || "No se pudo actualizar el gasto",
-        variant: "destructive",
-      })
-      return false
-    }
-  }
-
-  const eliminarGasto = async (id: string) => {
-    try {
-      const { error } = await supabase.from("gastos").delete().eq("id", id)
-
-      if (error) throw error
-
-      setGastos(gastos.filter((g) => g.id !== id))
-      toast({
-        title: "Gasto eliminado",
-        description: "El gasto se eliminó correctamente",
-        variant: "success",
-      })
-
-      return true
-    } catch (error: any) {
-      toast({
-        title: "Error",
-        description: error.message || "No se pudo eliminar el gasto",
-        variant: "destructive",
-      })
-      return false
-    }
-  }
+    setLoading(false)
+  }, [supabase, user, toast])
 
   useEffect(() => {
     fetchGastos()
-  }, [])
+  }, [fetchGastos])
 
-  return {
-    gastos,
-    loading,
-    agregarGasto,
-    actualizarGasto,
-    eliminarGasto,
-    refetch: fetchGastos,
+  const addGasto = async (newGasto: Omit<Gasto, "id" | "created_at">) => {
+    if (!user) {
+      toast({
+        title: "Error",
+        description: "Debes iniciar sesión para agregar un gasto.",
+        variant: "destructive",
+      })
+      return
+    }
+    const { data, error: insertError } = await supabase.from("gastos").insert({
+      ...newGasto,
+      user_id: user.id,
+    })
+    if (insertError) {
+      toast({
+        title: "Error al agregar gasto",
+        description: insertError.message,
+        variant: "destructive",
+      })
+      return null
+    } else {
+      toast({
+        title: "Gasto agregado",
+        description: "El gasto ha sido guardado exitosamente.",
+      })
+      fetchGastos() // Refresh the list
+      return data
+    }
   }
+
+  const deleteGasto = async (id: string) => {
+    const { error: deleteError } = await supabase.from("gastos").delete().eq("id", id)
+    if (deleteError) {
+      toast({
+        title: "Error al eliminar gasto",
+        description: deleteError.message,
+        variant: "destructive",
+      })
+      return false
+    } else {
+      toast({
+        title: "Gasto eliminado",
+        description: "El gasto ha sido eliminado exitosamente.",
+      })
+      fetchGastos() // Refresh the list
+      return true
+    }
+  }
+
+  return { gastos, loading, error, addGasto, deleteGasto, fetchGastos }
 }

@@ -10,7 +10,7 @@ const nextConfig = {
     remotePatterns: [
       {
         protocol: 'https',
-        hostname: 'assets.vercel.com',
+        hostname: 'blob.v0.dev',
       },
     ],
     unoptimized: true,

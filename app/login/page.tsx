@@ -2,122 +2,79 @@
 
 import type React from "react"
 
-import { useState, useEffect } from "react"
+import { useState } from "react"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Eye, EyeOff, Lock, User, Mail } from "lucide-react"
-import Image from "next/image"
 import { useAuth } from "@/hooks/use-auth"
+import { useToast } from "@/hooks/use-toast"
 import { LoadingSpinner } from "@/components/loading-spinner"
-import { useRouter } from "next/navigation"
+import Image from "next/image"
 
 export default function LoginPage() {
-  const [loginData, setLoginData] = useState({
-    email: "",
-    password: "",
-  })
+  const { signIn, signUp } = useAuth()
+  const { toast } = useToast()
 
-  const [registerData, setRegisterData] = useState({
-    nombre: "",
-    nombreNegocio: "", // Nuevo campo para el nombre del negocio
-    email: "",
-    password: "",
-    confirmPassword: "",
-  })
-
-  const [showPassword, setShowPassword] = useState(false)
-  const [showConfirmPassword, setShowConfirmPassword] = useState(false)
-  const [errors, setErrors] = useState<Record<string, string>>({})
-
-  const { user, loading, signIn, signUp } = useAuth()
-  const router = useRouter()
-
-  // Redirigir si ya está autenticado
-  useEffect(() => {
-    if (user && !loading) {
-      router.push("/")
-    }
-  }, [user, loading, router])
-
-  const validateLogin = () => {
-    const newErrors: Record<string, string> = {}
-
-    if (!loginData.email) newErrors.email = "El email es obligatorio"
-    if (!loginData.password) newErrors.password = "La contraseña es obligatoria"
-
-    setErrors(newErrors)
-    return Object.keys(newErrors).length === 0
-  }
-
-  const validateRegister = () => {
-    const newErrors: Record<string, string> = {}
-
-    if (!registerData.nombre) newErrors.nombre = "El nombre es obligatorio"
-    if (!registerData.nombreNegocio) newErrors.nombreNegocio = "El nombre del negocio es obligatorio"
-    if (!registerData.email) newErrors.email = "El email es obligatorio"
-    if (!registerData.password) newErrors.password = "La contraseña es obligatoria"
-    if (registerData.password.length < 6) newErrors.password = "La contraseña debe tener al menos 6 caracteres"
-    if (registerData.password !== registerData.confirmPassword) {
-      newErrors.confirmPassword = "Las contraseñas no coinciden"
-    }
-
-    setErrors(newErrors)
-    return Object.keys(newErrors).length === 0
-  }
+  const [loginEmail, setLoginEmail] = useState("")
+  const [loginPassword, setLoginPassword] = useState("")
+  const [registerEmail, setRegisterEmail] = useState("")
+  const [registerPassword, setRegisterPassword] = useState("")
+  const [registerFullName, setRegisterFullName] = useState("")
+  const [registerBusinessName, setRegisterBusinessName] = useState("")
+  const [loading, setLoading] = useState(false)
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!validateLogin()) return
-
-    await signIn(loginData.email, loginData.password)
+    setLoading(true)
+    const { error } = await signIn(loginEmail, loginPassword)
+    if (error) {
+      toast({
+        title: "Error de inicio de sesión",
+        description: error.message,
+        variant: "destructive",
+      })
+    } else {
+      toast({
+        title: "Inicio de sesión exitoso",
+        description: "Bienvenido de nuevo.",
+      })
+    }
+    setLoading(false)
   }
 
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!validateRegister()) return
-
-    const success = await signUp(
-      registerData.email,
-      registerData.password,
-      registerData.nombre,
-      registerData.nombreNegocio,
-    )
-    if (success) {
-      // Limpiar formulario
-      setRegisterData({
-        nombre: "",
-        nombreNegocio: "",
-        email: "",
-        password: "",
-        confirmPassword: "",
+    setLoading(true)
+    const { error } = await signUp(registerEmail, registerPassword, registerFullName, registerBusinessName)
+    if (error) {
+      toast({
+        title: "Error de registro",
+        description: error.message,
+        variant: "destructive",
       })
+    } else {
+      toast({
+        title: "Registro exitoso",
+        description: "Por favor, revisa tu correo para confirmar tu cuenta.",
+      })
+      // Optionally clear form or redirect
+      setRegisterEmail("")
+      setRegisterPassword("")
+      setRegisterFullName("")
+      setRegisterBusinessName("")
     }
-  }
-
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <LoadingSpinner size="lg" />
-      </div>
-    )
-  }
-
-  if (user) {
-    return null // Se está redirigiendo
+    setLoading(false)
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-black flex items-center justify-center p-4">
+    <div className="flex min-h-screen items-center justify-center bg-gray-100 dark:bg-gray-950">
       <Card className="w-full max-w-md">
-        <CardHeader className="text-center space-y-4">
-          <div className="flex justify-center">
-            <Image src="/x3-logo.png" alt="X3 Padel Center" width={200} height={80} className="h-16 w-auto" />
-          </div>
-          <CardTitle className="text-2xl font-bold">X3 Padel Center</CardTitle>
-          <p className="text-muted-foreground">Sistema de gestión</p>
+        <CardHeader className="flex flex-col items-center">
+          <Image src="/x3-logo.png" alt="X3 Padel Center Logo" width={150} height={60} priority />
+          <CardTitle className="mt-4 text-2xl">Acceso al Sistema</CardTitle>
+          <CardDescription>Inicia sesión o regístrate para continuar.</CardDescription>
         </CardHeader>
         <CardContent>
           <Tabs defaultValue="login" className="w-full">
@@ -125,180 +82,81 @@ export default function LoginPage() {
               <TabsTrigger value="login">Iniciar Sesión</TabsTrigger>
               <TabsTrigger value="register">Registrarse</TabsTrigger>
             </TabsList>
-
             <TabsContent value="login">
-              <form onSubmit={handleLogin} className="space-y-4">
+              <form onSubmit={handleLogin} className="space-y-4 py-4">
                 <div className="space-y-2">
-                  <Label htmlFor="email">Email</Label>
-                  <div className="relative">
-                    <Mail className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-                    <Input
-                      id="email"
-                      type="email"
-                      value={loginData.email}
-                      onChange={(e) => setLoginData({ ...loginData, email: e.target.value })}
-                      placeholder="tu@email.com"
-                      className={`pl-10 ${errors.email ? "border-red-500" : ""}`}
-                      required
-                    />
-                  </div>
-                  {errors.email && <p className="text-sm text-red-500">{errors.email}</p>}
+                  <Label htmlFor="login-email">Email</Label>
+                  <Input
+                    id="login-email"
+                    type="email"
+                    placeholder="m@example.com"
+                    value={loginEmail}
+                    onChange={(e) => setLoginEmail(e.target.value)}
+                    required
+                  />
                 </div>
-
                 <div className="space-y-2">
-                  <Label htmlFor="password">Contraseña</Label>
-                  <div className="relative">
-                    <Lock className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-                    <Input
-                      id="password"
-                      type={showPassword ? "text" : "password"}
-                      value={loginData.password}
-                      onChange={(e) => setLoginData({ ...loginData, password: e.target.value })}
-                      placeholder="Tu contraseña"
-                      className={`pl-10 pr-10 ${errors.password ? "border-red-500" : ""}`}
-                      required
-                    />
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      className="absolute right-0 top-0 h-full px-3 py-2 hover:bg-transparent"
-                      onClick={() => setShowPassword(!showPassword)}
-                    >
-                      {showPassword ? (
-                        <EyeOff className="h-4 w-4 text-muted-foreground" />
-                      ) : (
-                        <Eye className="h-4 w-4 text-muted-foreground" />
-                      )}
-                    </Button>
-                  </div>
-                  {errors.password && <p className="text-sm text-red-500">{errors.password}</p>}
+                  <Label htmlFor="login-password">Contraseña</Label>
+                  <Input
+                    id="login-password"
+                    type="password"
+                    value={loginPassword}
+                    onChange={(e) => setLoginPassword(e.target.value)}
+                    required
+                  />
                 </div>
-
                 <Button type="submit" className="w-full" disabled={loading}>
-                  {loading ? <LoadingSpinner size="sm" className="mr-2" /> : null}
-                  {loading ? "Iniciando sesión..." : "Iniciar Sesión"}
+                  {loading ? <LoadingSpinner className="mr-2" /> : null}
+                  Iniciar Sesión
                 </Button>
               </form>
             </TabsContent>
-
             <TabsContent value="register">
-              <form onSubmit={handleRegister} className="space-y-4">
+              <form onSubmit={handleRegister} className="space-y-4 py-4">
                 <div className="space-y-2">
-                  <Label htmlFor="nombre">Nombre completo</Label>
-                  <div className="relative">
-                    <User className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-                    <Input
-                      id="nombre"
-                      type="text"
-                      value={registerData.nombre}
-                      onChange={(e) => setRegisterData({ ...registerData, nombre: e.target.value })}
-                      placeholder="Tu nombre completo"
-                      className={`pl-10 ${errors.nombre ? "border-red-500" : ""}`}
-                      required
-                    />
-                  </div>
-                  {errors.nombre && <p className="text-sm text-red-500">{errors.nombre}</p>}
+                  <Label htmlFor="register-email">Email</Label>
+                  <Input
+                    id="register-email"
+                    type="email"
+                    placeholder="m@example.com"
+                    value={registerEmail}
+                    onChange={(e) => setRegisterEmail(e.target.value)}
+                    required
+                  />
                 </div>
-
                 <div className="space-y-2">
-                  <Label htmlFor="nombreNegocio">Nombre del Negocio</Label>
-                  <div className="relative">
-                    <Mail className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />{" "}
-                    {/* Usar un icono más apropiado si hay */}
-                    <Input
-                      id="nombreNegocio"
-                      type="text"
-                      value={registerData.nombreNegocio}
-                      onChange={(e) => setRegisterData({ ...registerData, nombreNegocio: e.target.value })}
-                      placeholder="Ej: X3 Padel Center"
-                      className={`pl-10 ${errors.nombreNegocio ? "border-red-500" : ""}`}
-                      required
-                    />
-                  </div>
-                  {errors.nombreNegocio && <p className="text-sm text-red-500">{errors.nombreNegocio}</p>}
+                  <Label htmlFor="register-password">Contraseña</Label>
+                  <Input
+                    id="register-password"
+                    type="password"
+                    value={registerPassword}
+                    onChange={(e) => setRegisterPassword(e.target.value)}
+                    required
+                  />
                 </div>
-
                 <div className="space-y-2">
-                  <Label htmlFor="registerEmail">Email</Label>
-                  <div className="relative">
-                    <Mail className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-                    <Input
-                      id="registerEmail"
-                      type="email"
-                      value={registerData.email}
-                      onChange={(e) => setRegisterData({ ...registerData, email: e.target.value })}
-                      placeholder="tu@email.com"
-                      className={`pl-10 ${errors.email ? "border-red-500" : ""}`}
-                      required
-                    />
-                  </div>
-                  {errors.email && <p className="text-sm text-red-500">{errors.email}</p>}
+                  <Label htmlFor="register-full-name">Nombre Completo</Label>
+                  <Input
+                    id="register-full-name"
+                    type="text"
+                    value={registerFullName}
+                    onChange={(e) => setRegisterFullName(e.target.value)}
+                    required
+                  />
                 </div>
-
                 <div className="space-y-2">
-                  <Label htmlFor="registerPassword">Contraseña</Label>
-                  <div className="relative">
-                    <Lock className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-                    <Input
-                      id="registerPassword"
-                      type={showPassword ? "text" : "password"}
-                      value={registerData.password}
-                      onChange={(e) => setRegisterData({ ...registerData, password: e.target.value })}
-                      placeholder="Mínimo 6 caracteres"
-                      className={`pl-10 pr-10 ${errors.password ? "border-red-500" : ""}`}
-                      required
-                    />
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      className="absolute right-0 top-0 h-full px-3 py-2 hover:bg-transparent"
-                      onClick={() => setShowPassword(!showPassword)}
-                    >
-                      {showPassword ? (
-                        <EyeOff className="h-4 w-4 text-muted-foreground" />
-                      ) : (
-                        <Eye className="h-4 w-4 text-muted-foreground" />
-                      )}
-                    </Button>
-                  </div>
-                  {errors.password && <p className="text-sm text-red-500">{errors.password}</p>}
+                  <Label htmlFor="register-business-name">Nombre del Negocio</Label>
+                  <Input
+                    id="register-business-name"
+                    type="text"
+                    value={registerBusinessName}
+                    onChange={(e) => setRegisterBusinessName(e.target.value)}
+                    required
+                  />
                 </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="confirmPassword">Confirmar contraseña</Label>
-                  <div className="relative">
-                    <Lock className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-                    <Input
-                      id="confirmPassword"
-                      type={showConfirmPassword ? "text" : "password"}
-                      value={registerData.confirmPassword}
-                      onChange={(e) => setRegisterData({ ...registerData, confirmPassword: e.target.value })}
-                      placeholder="Confirma tu contraseña"
-                      className={`pl-10 pr-10 ${errors.confirmPassword ? "border-red-500" : ""}`}
-                      required
-                    />
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      className="absolute right-0 top-0 h-full px-3 py-2 hover:bg-transparent"
-                      onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                    >
-                      {showConfirmPassword ? (
-                        <EyeOff className="h-4 w-4 text-muted-foreground" />
-                      ) : (
-                        <Eye className="h-4 w-4 text-muted-foreground" />
-                      )}
-                    </Button>
-                  </div>
-                  {errors.confirmPassword && <p className="text-sm text-red-500">{errors.confirmPassword}</p>}
-                </div>
-
                 <Button type="submit" className="w-full" disabled={loading}>
-                  {loading ? <LoadingSpinner size="sm" className="mr-2" /> : null}
-                  {loading ? "Registrando..." : "Crear Cuenta"}
+                  {loading ? <LoadingSpinner className="mr-2" /> : null}
+                  Registrarse
                 </Button>
               </form>
             </TabsContent>
