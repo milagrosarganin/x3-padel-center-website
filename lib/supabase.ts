@@ -1,35 +1,26 @@
 import { createBrowserClient } from "@supabase/ssr"
 
-// Asegúrate de que estas variables estén definidas en tus variables de entorno de Vercel
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+// Esta función se asegura de que las variables de entorno existan.
+// Se llamará una sola vez.
+function getSupabaseEnv() {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 
-// Estos logs son CRUCIALES para depurar en Vercel.
-// Revísalos en los logs de tu despliegue en Vercel.
-console.log("Supabase URL:", supabaseUrl ? "Configurada" : "NO CONFIGURADA")
-console.log("Supabase Anon Key:", supabaseAnonKey ? "Configurada" : "NO CONFIGURADA")
-
-if (!supabaseUrl || !supabaseAnonKey) {
-  console.error(
-    "¡ERROR CRÍTICO! Faltan variables de entorno de Supabase. Por favor, configura NEXT_PUBLIC_SUPABASE_URL y NEXT_PUBLIC_SUPABASE_ANON_KEY en Vercel.",
-  )
-  // En una aplicación real, podrías querer lanzar un error o manejar esto de forma más elegante.
-  // Por ahora, continuaremos, pero el cliente probablemente fallará.
+  if (!supabaseUrl || !supabaseAnonKey) {
+    throw new Error(
+      "Faltan las variables de entorno de Supabase: NEXT_PUBLIC_SUPABASE_URL o NEXT_PUBLIC_SUPABASE_ANON_KEY.",
+    )
+  }
+  return { supabaseUrl, supabaseAnonKey }
 }
 
-// Patrón Singleton para el cliente de Supabase
-let supabase: ReturnType<typeof createBrowserClient> | null = null
+// Creamos el cliente una sola vez y lo exportamos.
+// Esto es más eficiente que el patrón Singleton con una función.
+const { supabaseUrl, supabaseAnonKey } = getSupabaseEnv()
+export const supabase = createBrowserClient(supabaseUrl, supabaseAnonKey)
 
+// Para mantener la compatibilidad con tu código existente que usa `createClient()`,
+// podemos exportar una función que simplemente devuelve el cliente ya creado.
 export function createClient() {
-  if (!supabase) {
-    if (!supabaseUrl || !supabaseAnonKey) {
-      // Si las variables no están disponibles aquí, significa que no se configuraron correctamente
-      // o que hay un problema en el entorno de ejecución.
-      throw new Error("El cliente de Supabase no puede ser creado: Faltan variables de entorno.")
-    }
-    // Inicializa correctamente el cliente usando createBrowserClient
-    supabase = createBrowserClient(supabaseUrl, supabaseAnonKey)
-    console.log("Cliente de Supabase inicializado.")
-  }
   return supabase
 }
