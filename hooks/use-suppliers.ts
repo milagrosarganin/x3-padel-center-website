@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react"
 import { createClient } from "@/lib/supabase"
-import { useAuth } from "./use-auth"
+import { useAuth } from "@/hooks/use-auth"
 
 interface Supplier {
   id: string
@@ -31,10 +31,10 @@ export function useSuppliers() {
     setError(null)
     try {
       const { data, error: fetchError } = await supabase
-        .from("suppliers")
+        .from("proveedores")
         .select("*")
         .eq("user_id", user.id)
-        .order("name", { ascending: true })
+        .order("nombre", { ascending: true })
 
       if (fetchError) throw fetchError
       setSuppliers(data || [])
@@ -51,19 +51,19 @@ export function useSuppliers() {
   }, [fetchSuppliers])
 
   const addSupplier = async (newSupplier: Omit<Supplier, "id" | "user_id" | "created_at">) => {
-    if (!user) throw new Error("User not authenticated.")
+    if (!user) throw new Error("Usuario no autenticado.")
     setLoading(true)
     setError(null)
     try {
-      const { data, error: insertError } = await supabase
-        .from("suppliers")
+      const { data: inserted, error: insertError } = await supabase
+        .from("proveedores")
         .insert({ ...newSupplier, user_id: user.id })
         .select()
         .single()
 
       if (insertError) throw insertError
-      setSuppliers((prev) => [data, ...prev])
-      return data
+      setSuppliers((prev) => [inserted, ...prev])
+      return inserted
     } catch (err: any) {
       setError(err)
       console.error("Error adding supplier:", err.message)
@@ -73,5 +73,47 @@ export function useSuppliers() {
     }
   }
 
-  return { suppliers, addSupplier, loading, error, fetchSuppliers }
+  const updateSupplier = async (
+    id: string,
+    updates: Partial<Omit<Supplier, "id" | "user_id" | "created_at">>
+  ) => {
+    const { error: updateError } = await supabase
+      .from("proveedores")
+      .update(updates)
+      .eq("id", id)
+
+    if (updateError) {
+      setError(updateError)
+      return false
+    } else {
+      await fetchSuppliers()
+      return true
+    }
+  }
+
+  const deleteSupplier = async (id: string) => {
+    const { error: deleteError } = await supabase
+      .from("proveedores")
+      .delete()
+      .eq("id", id)
+
+    if (deleteError) {
+      throw deleteError
+    } else {
+      // Volvemos a cargar los proveedores para asegurar que la lista esté actualizada.
+      // Es más seguro que modificar el estado localmente.
+      await fetchSuppliers()
+      return true
+    }
+  }
+
+  return {
+    suppliers,
+    addSupplier,
+    updateSupplier,
+    deleteSupplier,
+    loading,
+    error,
+    fetchSuppliers
+  }
 }

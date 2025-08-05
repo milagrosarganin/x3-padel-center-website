@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { useAuth } from "@/hooks/use-auth"
-import { ArqueoCaja } from "@/components/arqueo-caja"
+import ArqueoCaja from "@/components/arqueo-caja"
 import { Mostrador } from "@/components/mostrador"
 import { HistorialVentas } from "@/components/historial-ventas"
 import { Stock } from "@/components/stock"
@@ -34,13 +34,13 @@ export default function DashboardPage() {
     if (error) {
       toast({
         title: "Error al cerrar sesión",
-        description: error.message,
+        content: error.message,
         variant: "destructive",
       })
     } else {
       toast({
         title: "Sesión cerrada",
-        description: "Has cerrado sesión exitosamente.",
+        content: "Has cerrado sesión exitosamente.",
       })
       router.push("/login")
     }
@@ -50,8 +50,8 @@ export default function DashboardPage() {
     <div className="flex min-h-screen w-full flex-col bg-gray-100 dark:bg-gray-950">
       <header className="sticky top-0 z-40 flex h-16 items-center justify-between border-b bg-white px-4 dark:border-gray-800 dark:bg-gray-900 md:px-6">
         <div className="flex items-center gap-4">
-          <Image src="/x3-logo.png" alt="X3 Padel Center Logo" width={100} height={40} priority />
-          <h1 className="text-xl font-semibold">X3 Padel Center</h1>
+          <Image src= "/x3-logo.png" alt="" width={100} height={40} priority />
+          <h1 className="text-xl font-semibold">FACTURAMA</h1>
         </div>
         <div className="flex items-center gap-4">
           <DropdownMenu>
@@ -98,7 +98,7 @@ export default function DashboardPage() {
             <Card>
               <CardHeader>
                 <CardTitle>Arqueo de Caja</CardTitle>
-                <CardDescription>Registra los movimientos de efectivo.</CardDescription>
+                <CardDescription>Registra los movimientos de la caja.</CardDescription>
               </CardHeader>
               <CardContent>
                 <ArqueoCaja />

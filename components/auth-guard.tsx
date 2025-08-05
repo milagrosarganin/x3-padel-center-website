@@ -5,7 +5,7 @@ import type React from "react"
 import { useEffect } from "react"
 import { useRouter, usePathname } from "next/navigation"
 import { useAuth } from "@/hooks/use-auth" // Import useAuth hook
-import { LoadingSpinner } from "./loading-spinner"
+import { LoadingSpinner } from "@/components/loading-spinner"
 
 export function AuthGuard({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth() // Usa el hook para obtener el estado del usuario y la carga

@@ -1,6 +1,7 @@
 "use client"
 
 import type React from "react"
+import { Trash2 } from "lucide-react"
 
 import { useState } from "react"
 import { Button } from "@/components/ui/button"
@@ -10,10 +11,10 @@ import { Textarea } from "@/components/ui/textarea"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { useSuppliers } from "@/hooks/use-suppliers"
 import { useToast } from "@/hooks/use-toast"
-import { LoadingSpinner } from "./loading-spinner"
+import { LoadingSpinner } from "@/components/loading-spinner"
 
 export function Proveedores() {
-  const { suppliers, addSupplier, loading, error } = useSuppliers()
+  const { suppliers, addSupplier, updateSupplier, deleteSupplier, loading, error } = useSuppliers()
   const { toast } = useToast()
 
   const [name, setName] = useState("")
@@ -21,6 +22,44 @@ export function Proveedores() {
   const [phone, setPhone] = useState("")
   const [email, setEmail] = useState("")
   const [address, setAddress] = useState("")
+  const [editingSupplierId, setEditingSupplierId] = useState<string | null>(null)
+
+  const resetForm = () => {
+    setName("")
+    setContactPerson("")
+    setPhone("")
+    setEmail("")
+    setAddress("")
+    setEditingSupplierId(null)
+  }
+
+  const handleEdit = (supplier: (typeof suppliers)[0]) => {
+    setEditingSupplierId(supplier.id)
+    setName(supplier.name)
+    setContactPerson(supplier.contact_person || "")
+    setPhone(supplier.phone || "")
+    setEmail(supplier.email || "")
+    setAddress(supplier.address || "")
+  }
+
+  const handleDelete = async (supplierId: string) => {
+    if (!window.confirm("¿Estás seguro de que quieres eliminar este proveedor?")) {
+      return
+    }
+    try {
+      await deleteSupplier(supplierId)
+      toast({
+        title: "Proveedor eliminado",
+        description: "El proveedor se ha eliminado exitosamente.",
+      })
+    } catch (err: any) {
+      toast({
+        title: "Error al eliminar",
+        description: err.message || "Ocurrió un error inesperado.",
+        variant: "destructive",
+      })
+    }
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -33,26 +72,32 @@ export function Proveedores() {
       return
     }
 
+    const supplierData = {
+      name,
+      contact_person: contactPerson || null,
+      phone: phone || null,
+      email: email || null,
+      address: address || null,
+    }
+
     try {
-      await addSupplier({
-        name,
-        contact_person: contactPerson || null,
-        phone: phone || null,
-        email: email || null,
-        address: address || null,
-      })
-      toast({
-        title: "Proveedor registrado",
-        description: "El proveedor se ha registrado exitosamente.",
-      })
-      setName("")
-      setContactPerson("")
-      setPhone("")
-      setEmail("")
-      setAddress("")
+      if (editingSupplierId) {
+        await updateSupplier(editingSupplierId, supplierData)
+        toast({
+          title: "Proveedor actualizado",
+          description: "El proveedor se ha actualizado exitosamente.",
+        })
+      } else {
+        await addSupplier(supplierData)
+        toast({
+          title: "Proveedor registrado",
+          description: "El proveedor se ha registrado exitosamente.",
+        })
+      }
+      resetForm()
     } catch (err: any) {
       toast({
-        title: "Error al registrar proveedor",
+        title: `Error al ${editingSupplierId ? "actualizar" : "registrar"} proveedor`,
         description: err.message || "Ocurrió un error inesperado.",
         variant: "destructive",
       })
@@ -79,7 +124,7 @@ export function Proveedores() {
   return (
     <div className="grid gap-6">
       <form onSubmit={handleSubmit} className="grid gap-4 rounded-lg border p-4">
-        <h3 className="text-lg font-semibold">Registrar Nuevo Proveedor</h3>
+        <h3 className="text-lg font-semibold">{editingSupplierId ? "Editar Proveedor" : "Registrar Nuevo Proveedor"}</h3>
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
           <div className="space-y-2">
             <Label htmlFor="name">Nombre del Proveedor</Label>
@@ -130,9 +175,14 @@ export function Proveedores() {
             />
           </div>
         </div>
-        <Button type="submit" className="w-full md:w-auto">
-          Registrar Proveedor
-        </Button>
+        <div className="flex gap-2">
+          <Button type="submit" className="w-full md:w-auto">
+            {editingSupplierId ? "Actualizar Proveedor" : "Registrar Proveedor"}
+          </Button>
+          {editingSupplierId && (
+            <Button type="button" variant="outline" onClick={resetForm}>Cancelar</Button>
+          )}
+        </div>
       </form>
 
       <div className="rounded-lg border shadow-sm">
@@ -145,12 +195,13 @@ export function Proveedores() {
               <TableHead>Teléfono</TableHead>
               <TableHead>Email</TableHead>
               <TableHead>Dirección</TableHead>
+              <TableHead>Acciones</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {suppliers.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={5} className="h-24 text-center">
+                <TableCell colSpan={6} className="h-24 text-center">
                   No hay proveedores registrados.
                 </TableCell>
               </TableRow>
@@ -162,6 +213,14 @@ export function Proveedores() {
                   <TableCell>{supplier.phone || "-"}</TableCell>
                   <TableCell>{supplier.email || "-"}</TableCell>
                   <TableCell>{supplier.address || "-"}</TableCell>
+                  <TableCell className="flex gap-2">
+                    <Button variant="outline" size="sm" onClick={() => handleEdit(supplier)}>
+                      Editar
+                    </Button>
+                    <Button variant="destructive" size="sm" onClick={() => handleDelete(supplier.id)}>
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </TableCell>
                 </TableRow>
               ))
             )}

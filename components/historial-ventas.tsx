@@ -4,18 +4,19 @@ import { useSales } from "@/hooks/use-sales"
 import { useToast } from "@/hooks/use-toast"
 import { format } from "date-fns"
 import { es } from "date-fns/locale"
-import { LoadingSpinner } from "./loading-spinner"
-import { ExportButton } from "./export-button"
+import { LoadingSpinner } from "@/components/loading-spinner"
+import { ExportButton } from "@/components/export-button"
 
 export function HistorialVentas() {
   const { sales, loading, error } = useSales()
   const { toast } = useToast()
 
   const salesHeaders = [
-    { key: "sale_date", label: "Fecha" },
-    { key: "total_amount", label: "Total" },
-    { key: "payment_method", label: "Método de Pago" },
-  ] as const // Use 'as const' for type inference
+    { key: "fecha", label: "Fecha" },
+    { key: "total", label: "Total" },
+    { key: "metodo_pago", label: "Método de Pago" },
+    { key: "origen", label: "Origen" },
+  ] // Use array for type inference
 
   if (loading) {
     return (
@@ -42,8 +43,8 @@ export function HistorialVentas() {
           <ExportButton
             data={sales.map((sale) => ({
               ...sale,
-              sale_date: format(new Date(sale.sale_date), "dd/MM/yyyy HH:mm", { locale: es }),
-              total_amount: sale.total_amount.toFixed(2),
+              fecha: format(new Date(sale.fecha), "dd/MM/yyyy HH:mm", { locale: es }),
+              total: sale.total.toFixed(2),
             }))}
             headers={salesHeaders}
             filename="historial_ventas"
@@ -55,23 +56,26 @@ export function HistorialVentas() {
               <TableHead>Fecha</TableHead>
               <TableHead>Total</TableHead>
               <TableHead>Método de Pago</TableHead>
+              <TableHead>Origen</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {sales.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={3} className="h-24 text-center">
+                <TableCell colSpan={4} className="h-24 text-center">
                   No hay ventas registradas.
                 </TableCell>
               </TableRow>
             ) : (
               sales.map((sale) => (
                 <TableRow key={sale.id}>
-                  <TableCell>{format(new Date(sale.sale_date), "dd/MM/yyyy HH:mm", { locale: es })}</TableCell>
-                  <TableCell>${sale.total_amount.toFixed(2)}</TableCell>
-                  <TableCell>{sale.payment_method || "-"}</TableCell>
+                  <TableCell>{format(new Date(sale.fecha), "dd/MM/yyyy HH:mm", { locale: es })}</TableCell>
+                  <TableCell>${sale.total.toFixed(2)}</TableCell>
+                  <TableCell>{sale.metodo_pago || "-"}</TableCell>
+                  <TableCell>{sale.origen || "-"}</TableCell>
                 </TableRow>
               ))
+
             )}
           </TableBody>
         </Table>

@@ -28,7 +28,7 @@ export default function LoginPage() {
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoading(true)
-    const { error } = await signIn(loginEmail, loginPassword)
+    const { error } = await signIn({ email: loginEmail, password: loginPassword })
     if (error) {
       toast({
         title: "Error de inicio de sesión",
@@ -47,17 +47,23 @@ export default function LoginPage() {
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoading(true)
-    const { error } = await signUp(registerEmail, registerPassword, registerFullName, registerBusinessName)
+    const { error } = await signUp({
+      email: registerEmail,
+      password: registerPassword,
+      options: {
+        data: { full_name: registerFullName, business_name: registerBusinessName },
+      },
+    })
     if (error) {
       toast({
         title: "Error de registro",
-        description: error.message,
+        description: error.message || "Ocurrió un error inesperado durante el registro.",
         variant: "destructive",
       })
     } else {
       toast({
         title: "Registro exitoso",
-        description: "Por favor, revisa tu correo para confirmar tu cuenta.",
+        description: "Por favor, revisa tu correo para confirmar tu cuenta.", // Keep description
       })
       // Optionally clear form or redirect
       setRegisterEmail("")
@@ -72,7 +78,7 @@ export default function LoginPage() {
     <div className="flex min-h-screen items-center justify-center bg-gray-100 dark:bg-gray-950">
       <Card className="w-full max-w-md">
         <CardHeader className="flex flex-col items-center">
-          <Image src="/x3-logo.png" alt="X3 Padel Center Logo" width={150} height={60} priority />
+          <Image src="/x3-logo.png" alt="" width={150} height={60} priority />
           <CardTitle className="mt-4 text-2xl">Acceso al Sistema</CardTitle>
           <CardDescription>Inicia sesión o regístrate para continuar.</CardDescription>
         </CardHeader>

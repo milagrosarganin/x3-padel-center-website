@@ -1,168 +1,230 @@
 "use client"
 
-import type React from "react"
-
-import { useState } from "react"
-import { Button } from "@/components/ui/button"
+import { useState, useEffect } from "react"
+import { createClient } from "@/lib/supabase"
+import { useAuth } from "@/hooks/use-auth"
 import { Input } from "@/components/ui/input"
+import { Button } from "@/components/ui/button"
+import { Card, CardHeader, CardContent } from "@/components/ui/card"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { useCashRegisterMovements } from "@/hooks/use-cash-register-movements"
-import { useToast } from "@/hooks/use-toast"
-import { format } from "date-fns"
-import { es } from "date-fns/locale"
-import { LoadingSpinner } from "./loading-spinner"
+import { toast } from "@/components/ui/use-toast"
 
-export function ArqueoCaja() {
-  const { movements, addMovement, loading, error } = useCashRegisterMovements()
-  const { toast } = useToast()
+export default function ArqueoCaja() {
+  const supabase = createClient()
+  const { user } = useAuth()
 
-  const [amount, setAmount] = useState("")
-  const [description, setDescription] = useState("")
-  const [movementType, setMovementType] = useState<"initial_balance" | "deposit" | "withdrawal" | "closing_balance">(
-    "deposit",
-  )
+  const [arqueoAbierto, setArqueoAbierto] = useState<any>(null)
+  const [saldoInicial, setSaldoInicial] = useState("")
+  const [comentario, setComentario] = useState("")
+  const [loading, setLoading] = useState(false)
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!amount || !movementType) {
-      toast({
-        title: "Error",
-        description: "Por favor, completa todos los campos requeridos.",
-        variant: "destructive",
-      })
-      return
+  const paymentMethodLabels: Record<string, string> = {
+    Efectivo: "Efectivo",
+    Tarjeta: "Tarjeta",
+    Transferencia: "Transferencia",
+    Otro: "Otro",
+  }
+
+  // Usamos las llaves del objeto de etiquetas como la fuente de verdad para los medios de pago.
+  // Esto asegura consistencia con el componente Mostrador.
+  const medios = Object.keys(paymentMethodLabels)
+
+  const [ventasTotales, setVentasTotales] = useState<any>({})
+  const [gastosTotales, setGastosTotales] = useState<any>({})
+
+  // 1. Cargar arqueo abierto si hay
+  const fetchArqueoAbierto = async () => {
+    if (!user) return
+    const { data, error } = await supabase
+      .from("arqueo_caja")
+      .select("*")
+      .eq("user_id", user.id)
+      .is("fecha_cierre", null)
+      .single()
+    if (!error) {
+      setArqueoAbierto(data)
     }
+  }
 
-    const parsedAmount = Number.parseFloat(amount)
-    if (isNaN(parsedAmount) || parsedAmount <= 0) {
-      toast({
-        title: "Error",
-        description: "El monto debe ser un número positivo.",
-        variant: "destructive",
-      })
-      return
+  // 2. Cargar ventas y gastos para ese usuario
+  const fetchVentasYGastos = async () => {
+    if (!user || !arqueoAbierto) return
+
+    const { data: ventas } = await supabase
+      .from("ventas")
+      .select("metodo_pago, total")
+      .eq("user_id", user.id)
+      .gte("created_at", arqueoAbierto.fecha_apertura)
+
+    const { data: movimientos } = await supabase
+      .from("movimientos_caja")
+      .select("tipo, amount")
+      .eq("user_id", user.id)
+      .gte("created_at", arqueoAbierto.fecha_apertura)
+
+    const ventasSum = Object.fromEntries(medios.map((m) => [m, 0]))
+    ventas?.forEach((v) => {
+      const metodo = v.metodo_pago || "cash" // Corregido para usar 'cash' como default
+      ventasSum[metodo] = (ventasSum[metodo] || 0) + v.total
+    })
+
+    const gastosSum = Object.fromEntries(medios.map((m) => [m, 0]))
+    movimientos?.forEach((m) => {
+      if (m.tipo === "Egreso") {
+        // Asumimos que todos los gastos son en efectivo por ahora
+        gastosSum["cash"] += m.amount
+      }
+    })
+
+    setVentasTotales(ventasSum)
+    setGastosTotales(gastosSum)
+  }
+
+  useEffect(() => {
+    fetchArqueoAbierto()
+  }, [user])
+
+  useEffect(() => {
+    if (arqueoAbierto) {
+      fetchVentasYGastos()
+      const interval = setInterval(fetchVentasYGastos, 5000)
+      return () => clearInterval(interval)
     }
+  }, [arqueoAbierto])
 
+  // 3. Iniciar arqueo
+  const iniciarArqueo = async () => {
+    setLoading(true)
     try {
-      await addMovement({
-        amount: parsedAmount,
-        description,
-        movement_type: movementType,
-      })
-      toast({
-        title: "Movimiento registrado",
-        description: "El movimiento de caja se ha registrado exitosamente.",
-      })
-      setAmount("")
-      setDescription("")
-      setMovementType("deposit")
+      const { data, error } = await supabase
+        .from("arqueo_caja")
+        .insert({
+          user_id: user?.id,
+          fecha_apertura: new Date().toISOString(),
+          saldo_inicial: parseFloat(saldoInicial),
+          comentarios: comentario,
+          ...Object.fromEntries(medios.map((m) => [`ventas_${m}`, 0])),
+          ...Object.fromEntries(medios.map((m) => [`gastos_${m}`, 0])),
+        })
+        .select()
+        .single()
+
+      if (error) throw error
+
+      setArqueoAbierto(data)
+      setSaldoInicial("")
+      toast({ title: "Arqueo iniciado correctamente" })
     } catch (err: any) {
-      toast({
-        title: "Error al registrar movimiento",
-        description: err.message || "Ocurrió un error inesperado.",
-        variant: "destructive",
-      })
+      console.error(err)
+      toast({ title: "Error al iniciar arqueo", description: err.message })
+    } finally {
+      setLoading(false)
     }
   }
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center p-8">
-        <LoadingSpinner />
-        <p className="ml-2">Cargando movimientos de caja...</p>
-      </div>
-    )
-  }
+  // 4. Finalizar arqueo
+  const finalizarArqueo = async () => {
+    setLoading(true)
+    try {
+      const diferencia = parseFloat(saldoInicial || "0") +
+        (Object.values(ventasTotales) as number[]).reduce((a, b) => a + b, 0) -
+        (Object.values(gastosTotales) as number[]).reduce((a, b) => a + b, 0)
 
-  if (error) {
-    return (
-      <div className="p-8 text-red-500">
-        <p>Error al cargar movimientos de caja: {error.message}</p>
-      </div>
-    )
+      const { error } = await supabase
+        .from("arqueo_caja")
+        .update({
+          fecha_cierre: new Date().toISOString(),
+          saldo_final: null,
+          diferencia,
+          ...Object.fromEntries(
+            medios.map((m) => [`ventas_${m}`, ventasTotales[m] || 0])
+          ),
+          ...Object.fromEntries(
+            medios.map((m) => [`gastos_${m}`, gastosTotales[m] || 0])
+          ),
+        })
+        .eq("id", arqueoAbierto.id)
+
+      if (error) throw error
+
+      setArqueoAbierto(null)
+      toast({ title: "Arqueo finalizado" })
+    } catch (err: any) {
+      console.error(err)
+      toast({ title: "Error al finalizar arqueo", description: err.message })
+    } finally {
+      setLoading(false)
+    }
   }
 
   return (
-    <div className="grid gap-6">
-      <form onSubmit={handleSubmit} className="grid gap-4 rounded-lg border p-4">
-        <h3 className="text-lg font-semibold">Registrar Nuevo Movimiento</h3>
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-          <div className="space-y-2">
-            <Label htmlFor="movement-type">Tipo de Movimiento</Label>
-            <Select value={movementType} onValueChange={(value: typeof movementType) => setMovementType(value)}>
-              <SelectTrigger id="movement-type">
-                <SelectValue placeholder="Selecciona un tipo" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="initial_balance">Saldo Inicial</SelectItem>
-                <SelectItem value="deposit">Ingreso</SelectItem>
-                <SelectItem value="withdrawal">Egreso</SelectItem>
-                <SelectItem value="closing_balance">Cierre de Caja</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="amount">Monto</Label>
-            <Input
-              id="amount"
-              type="number"
-              step="0.01"
-              placeholder="0.00"
-              value={amount}
-              onChange={(e) => setAmount(e.target.value)}
-              required
-            />
-          </div>
-          <div className="space-y-2 md:col-span-1">
-            <Label htmlFor="description">Descripción (opcional)</Label>
-            <Textarea
-              id="description"
-              placeholder="Detalles del movimiento"
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-            />
-          </div>
-        </div>
-        <Button type="submit" className="w-full md:w-auto">
-          Registrar Movimiento
-        </Button>
-      </form>
+    <Card className="mt-4">
+      <CardHeader>
+        <h2 className="text-xl font-bold">Arqueo de Caja</h2>
+      </CardHeader>
+      <CardContent>
+        {!arqueoAbierto ? (
+          <>
+            <div className="grid gap-4 md:grid-cols-2">
+              <div>
+                <Label>Saldo inicial</Label>
+                <Input
+                  type="number"
+                  value={saldoInicial}
+                  onChange={(e) => setSaldoInicial(e.target.value)}
+                />
+              </div>
+              <div>
+                <Label>Comentarios</Label>
+                <Textarea
+                  value={comentario}
+                  onChange={(e) => setComentario(e.target.value)}
+                />
+              </div>
+            </div>
 
-      <div className="rounded-lg border shadow-sm">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Fecha</TableHead>
-              <TableHead>Tipo</TableHead>
-              <TableHead>Monto</TableHead>
-              <TableHead>Descripción</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {movements.length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={4} className="h-24 text-center">
-                  No hay movimientos de caja registrados.
-                </TableCell>
-              </TableRow>
-            ) : (
-              movements.map((movement) => (
-                <TableRow key={movement.id}>
-                  <TableCell>{format(new Date(movement.movement_date), "dd/MM/yyyy HH:mm", { locale: es })}</TableCell>
-                  <TableCell>{movement.movement_type}</TableCell>
-                  <TableCell className={movement.movement_type === "withdrawal" ? "text-red-500" : "text-green-500"}>
-                    ${movement.amount.toFixed(2)}
-                  </TableCell>
-                  <TableCell>{movement.description || "-"}</TableCell>
-                </TableRow>
-              ))
-            )}
-          </TableBody>
-        </Table>
-      </div>
-    </div>
+            <Button onClick={iniciarArqueo} disabled={loading} className="mt-4">
+              Iniciar Arqueo
+            </Button>
+          </>
+        ) : (
+          <>
+            <p className="mb-2 text-green-500 font-semibold">
+              Arqueo abierto desde:{" "}
+              {new Date(arqueoAbierto.fecha_apertura).toLocaleString()}
+            </p>
+
+            <div className="mb-4 bg-muted p-3 rounded-md w-fit">
+              <p className="text-sm text-muted-foreground">Monto Inicial:</p>
+              <p className="text-xl font-bold">${arqueoAbierto.saldo_inicial}</p>
+            </div>
+
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-4 my-4">
+              {medios.map((m) => (
+                <div key={m}>
+                  <Label>{m.toUpperCase()}</Label>
+                  <p>
+                    <span className="text-sm text-muted-foreground">Ventas:</span>{" "}
+                    ${ventasTotales[m] || 0}
+                    <br />
+                    <span className="text-sm text-muted-foreground">Gastos:</span>{" "}
+                    ${gastosTotales[m] || 0}
+                  </p>
+                </div>
+              ))}
+            </div>
+
+            <Button
+              onClick={finalizarArqueo}
+              variant="destructive"
+              disabled={loading}
+            >
+              Finalizar Arqueo
+            </Button>
+          </>
+        )}
+      </CardContent>
+    </Card>
   )
 }

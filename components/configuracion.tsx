@@ -1,8 +1,7 @@
 "use client"
 
-import type React from "react"
+import React, { useEffect, useState } from "react"
 
-import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -10,7 +9,7 @@ import { Switch } from "@/components/ui/switch"
 import { useAuth } from "@/hooks/use-auth"
 import { useToast } from "@/hooks/use-toast"
 import { createClient } from "@/lib/supabase"
-import { LoadingSpinner } from "./loading-spinner"
+import { LoadingSpinner } from "@/components/loading-spinner"
 import { useTheme } from "next-themes"
 
 export function Configuracion() {
@@ -25,7 +24,7 @@ export function Configuracion() {
   const [isSaving, setIsSaving] = useState(false)
 
   // Update state when user object changes (e.g., after initial load or re-fetch)
-  useState(() => {
+  useEffect(() => {
     if (user) {
       setFullName(user.user_metadata?.full_name || "")
       setBusinessName(user.user_metadata?.business_name || "")
@@ -54,7 +53,7 @@ export function Configuracion() {
       // The user object might not update immediately until confirmed.
       if (data.user?.email !== user?.email) {
         toast({
-          title: "Perfil actualizado",
+          title: "Perfil actualizado", // Keep title
           description: "Tu perfil ha sido actualizado. Si cambiaste tu email, por favor confírmalo.",
         })
       } else {

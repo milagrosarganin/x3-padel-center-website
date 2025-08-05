@@ -6,28 +6,37 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { useProducts } from "@/hooks/use-products"
+import { useProductos } from "@/hooks/use-productos"
 import { useSales } from "@/hooks/use-sales"
 import { useToast } from "@/hooks/use-toast"
-import { LoadingSpinner } from "./loading-spinner"
+import { LoadingSpinner } from "@/components/loading-spinner"
 
 interface CartItem {
   id: string
-  name: string
-  price: number
+  nombre: string
+  precio_venta: number
   quantity: number
-  stock: number
+  stock_actual: number
+}
+
+const paymentMethodLabels: Record<string, string> = {
+  cash: "Efectivo",
+  card: "Tarjeta",
+  transfer: "Transferencia",
+  other: "Otro",
 }
 
 export function Mostrador() {
-  const { products, loading: productsLoading, error: productsError } = useProducts()
+  const { productos, loading: productsLoading, error: productsError } = useProductos()
   const { addSale, loading: salesLoading } = useSales()
   const { toast } = useToast()
 
-  const [selectedProductId, setSelectedProductId] = useState<string | undefined>(undefined)
+  const [selectedProductId, setSelectedProductId] = useState<string>("")
   const [quantity, setQuantity] = useState(1)
   const [cart, setCart] = useState<CartItem[]>([])
   const [paymentMethod, setPaymentMethod] = useState<string>("cash")
+  const selectedProduct = productos.find((p) => p.id === selectedProductId)
+
 
   const handleAddToCart = () => {
     if (!selectedProductId) {
@@ -39,40 +48,44 @@ export function Mostrador() {
       return
     }
 
-    const product = products.find((p) => p.id === selectedProductId)
+    const product = productos.find((p) => p.id === selectedProductId)
     if (!product) return
 
     const existingItem = cart.find((item) => item.id === product.id)
 
     if (existingItem) {
-      if (existingItem.quantity + quantity > product.stock) {
+      if (existingItem.quantity + quantity > product.stock_actual) {
         toast({
           title: "Stock insuficiente",
-          description: `Solo quedan ${product.stock} unidades de ${product.name}.`,
+          description: `Solo quedan ${product.stock_actual} unidades de ${product.nombre}.`,
           variant: "destructive",
         })
         return
       }
-      setCart(cart.map((item) => (item.id === product.id ? { ...item, quantity: item.quantity + quantity } : item)))
+      setCart(cart.map((item) =>
+        item.id === product.id
+          ? { ...item, quantity: item.quantity + quantity }
+          : item
+      ))
     } else {
-      if (quantity > product.stock) {
+      if (quantity > product.stock_actual) {
         toast({
           title: "Stock insuficiente",
-          description: `Solo quedan ${product.stock} unidades de ${product.name}.`,
+          description: `Solo quedan ${product.stock_actual} unidades de ${product.nombre}.`,
           variant: "destructive",
         })
         return
       }
-      setCart([...cart, { ...product, quantity, stock: product.stock }])
+      setCart([...cart, { id: product.id, nombre: product.nombre, precio_venta: product.precio_venta, stock_actual: product.stock_actual, quantity }])
     }
-    setQuantity(1) // Reset quantity after adding to cart
+    setQuantity(1)
   }
 
   const handleRemoveFromCart = (productId: string) => {
     setCart(cart.filter((item) => item.id !== productId))
   }
 
-  const totalAmount = cart.reduce((sum, item) => sum + item.price * item.quantity, 0)
+  const totalAmount = cart.reduce((sum, item) => sum + item.precio_venta * item.quantity, 0)
 
   const handleProcessSale = async () => {
     if (cart.length === 0) {
@@ -86,29 +99,31 @@ export function Mostrador() {
 
     try {
       await addSale({
-        total_amount: totalAmount,
-        payment_method: paymentMethod,
-        items: cart.map((item) => ({
-          product_id: item.id,
-          quantity: item.quantity,
-          price_at_sale: item.price,
-        })),
-      })
+    total: totalAmount,
+    metodo_pago: paymentMethod,
+    origen: "Mostrador", // 👈 nuevo campo
+    items: cart.map((item) => ({product_id: item.id, quantity: item.quantity, price_at_sale: item.precio_venta,})),
+  })
+
+
       toast({
         title: "Venta registrada",
         description: "La venta se ha procesado exitosamente.",
       })
       setCart([])
-      setSelectedProductId(undefined)
+      setSelectedProductId("")
       setQuantity(1)
       setPaymentMethod("cash")
-    } catch (err: any) {
+    } catch (error: any) {
+      console.error("Error en handleProcessSale:", error)
+
       toast({
         title: "Error al procesar venta",
-        description: err.message || "Ocurrió un error inesperado.",
+        description: `Error al registrar los productos de la venta: ${error?.message || "Error desconocido"}`,
         variant: "destructive",
       })
     }
+
   }
 
   if (productsLoading) {
@@ -137,16 +152,19 @@ export function Mostrador() {
             <Label htmlFor="product">Producto</Label>
             <Select value={selectedProductId} onValueChange={setSelectedProductId}>
               <SelectTrigger id="product">
-                <SelectValue placeholder="Selecciona un producto" />
+                <SelectValue placeholder="Selecciona un producto">
+                  {selectedProduct ? `${selectedProduct.nombre} (Stock: ${selectedProduct.stock_actual})` : ""}
+                </SelectValue>
               </SelectTrigger>
               <SelectContent>
-                {products.map((product) => (
+                {productos.map((product) => (
                   <SelectItem key={product.id} value={product.id}>
-                    {product.name} (Stock: {product.stock})
+                    {product.nombre} (Stock: {product.stock_actual})
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
+
           </div>
           <div className="space-y-2">
             <Label htmlFor="quantity">Cantidad</Label>
@@ -155,7 +173,7 @@ export function Mostrador() {
               type="number"
               min="1"
               value={quantity}
-              onChange={(e) => setQuantity(Number.parseInt(e.target.value))}
+              onChange={(e) => setQuantity(Number.parseInt(e.target.value) || 1)}
             />
           </div>
         </div>
@@ -186,10 +204,10 @@ export function Mostrador() {
             ) : (
               cart.map((item) => (
                 <TableRow key={item.id}>
-                  <TableCell>{item.name}</TableCell>
+                  <TableCell>{item.nombre}</TableCell>
                   <TableCell>{item.quantity}</TableCell>
-                  <TableCell>${item.price.toFixed(2)}</TableCell>
-                  <TableCell>${(item.price * item.quantity).toFixed(2)}</TableCell>
+                  <TableCell>${item.precio_venta.toFixed(2)}</TableCell>
+                  <TableCell>${(item.precio_venta * item.quantity).toFixed(2)}</TableCell>
                   <TableCell>
                     <Button variant="destructive" size="sm" onClick={() => handleRemoveFromCart(item.id)}>
                       Eliminar
@@ -208,13 +226,12 @@ export function Mostrador() {
           <Label htmlFor="payment-method">Método de Pago</Label>
           <Select value={paymentMethod} onValueChange={setPaymentMethod}>
             <SelectTrigger id="payment-method">
-              <SelectValue placeholder="Selecciona un método" />
+              <SelectValue placeholder="Selecciona un método">{paymentMethodLabels[paymentMethod]}</SelectValue>
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="cash">Efectivo</SelectItem>
-              <SelectItem value="card">Tarjeta</SelectItem>
-              <SelectItem value="transfer">Transferencia</SelectItem>
-              <SelectItem value="other">Otro</SelectItem>
+              {Object.entries(paymentMethodLabels).map(([value, label]) => (
+                <SelectItem key={value} value={value}>{label}</SelectItem>
+              ))}
             </SelectContent>
           </Select>
         </div>

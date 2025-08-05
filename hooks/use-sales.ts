@@ -2,8 +2,8 @@
 
 import { useState, useEffect, useCallback } from "react"
 import { createClient } from "@/lib/supabase"
-import { useAuth } from "./use-auth"
-import { useProducts } from "./use-products" // Import useProducts to refresh stock
+import { useAuth } from "@/hooks/use-auth"
+import { useProductos } from "@/hooks/use-productos"
 
 interface SaleItem {
   product_id: string
@@ -14,17 +14,26 @@ interface SaleItem {
 interface Sale {
   id: string
   user_id: string
-  sale_date: string
-  total_amount: number
-  payment_method: string | null
+  fecha: string
+  total: number
+  metodo_pago: string | null
+  origen: string | null
   created_at: string
-  items?: SaleItem[] // Optional, for when fetching details
+  items?: SaleItem[]
+  detalles: string | null
+}
+
+interface NewSalePayload {
+  total: number
+  metodo_pago: string | null
+  origen: string | null
+  items: SaleItem[]
 }
 
 export function useSales() {
   const supabase = createClient()
   const { user } = useAuth()
-  const { fetchProducts } = useProducts() // Get fetchProducts from useProducts
+  const { fetchProductos, productos } = useProductos()
   const [sales, setSales] = useState<Sale[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<Error | null>(null)
@@ -38,10 +47,10 @@ export function useSales() {
     setError(null)
     try {
       const { data, error: fetchError } = await supabase
-        .from("sales")
+        .from("ventas")
         .select("*")
         .eq("user_id", user.id)
-        .order("sale_date", { ascending: false })
+        .order("fecha", { ascending: false })
 
       if (fetchError) throw fetchError
       setSales(data || [])
@@ -57,52 +66,64 @@ export function useSales() {
     fetchSales()
   }, [fetchSales])
 
-  const addSale = async (
-    newSale: Omit<Sale, "id" | "user_id" | "sale_date" | "created_at"> & { items: SaleItem[] },
-  ) => {
-    if (!user) throw new Error("User not authenticated.")
+  const addSale = async (newSale: NewSalePayload) => {
+    if (!user) {
+      const authError = new Error("Usuario no autenticado.")
+      setError(authError)
+      throw authError
+    }
     setLoading(true)
     setError(null)
-    try {
-      // Start a transaction if Supabase supports it directly, or handle sequentially
-      // For simplicity, we'll do it sequentially and rely on RLS and triggers for integrity
 
+    try {
       const { data: saleData, error: saleError } = await supabase
-        .from("sales")
+        .from("ventas")
         .insert({
           user_id: user.id,
-          total_amount: newSale.total_amount,
-          payment_method: newSale.payment_method,
+          total: newSale.total,
+          metodo_pago: newSale.metodo_pago,
+          origen: newSale.origen,
+          fecha: new Date().toISOString(),
+          detalles: JSON.stringify(
+            newSale.items.map((item) => {
+              const product = productos.find((p) => p.id === item.product_id)
+              return {
+                product_id: item.product_id,
+                nombre: product?.nombre ?? "Desconocido",
+                quantity: item.quantity,
+                price_at_sale: item.price_at_sale,
+              }
+            })
+          ),
         })
         .select()
         .single()
 
-      if (saleError) throw saleError
+      if (saleError) {
+        throw new Error(`Error al registrar la venta: ${saleError.message}`)
+      }
 
-      const saleId = saleData.id
+      // Ya no insertamos en sale_items, guardamos todo en detalles (jsonb)
 
-      // Insert sale items
-      const saleItemsToInsert = newSale.items.map((item) => ({
-        sale_id: saleId,
-        product_id: item.product_id,
-        quantity: item.quantity,
-        price_at_sale: item.price_at_sale,
-      }))
+      const stockUpdatePromises = newSale.items.map((item) => {
+        const product = productos.find((p) => p.id === item.product_id)
+        const newStock = (product?.stock_actual ?? 0) - item.quantity
+        return supabase.from("productos").update({ stock_actual: newStock }).eq("id", item.product_id)
+      })
 
-      const { error: itemsError } = await supabase.from("sale_items").insert(saleItemsToInsert)
+      const stockUpdateResults = await Promise.all(stockUpdatePromises)
+      const stockUpdateError = stockUpdateResults.find((res) => res.error)
+      if (stockUpdateError) throw new Error(`Fallo al actualizar stock: ${stockUpdateError.error?.message}`)
 
-      if (itemsError) throw itemsError
-
-      // Re-fetch sales to update the list
       await fetchSales()
-      // Re-fetch products to update stock display
-      await fetchProducts()
+      await fetchProductos()
 
       return saleData
     } catch (err: any) {
-      setError(err)
-      console.error("Error adding sale:", err.message)
-      throw err
+      console.error("Error completo al procesar la venta:", err)
+      const errorMessage = err?.message || "Ocurrió un error inesperado al procesar la venta."
+      setError(new Error(errorMessage))
+      throw new Error(errorMessage)
     } finally {
       setLoading(false)
     }

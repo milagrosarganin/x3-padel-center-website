@@ -1,69 +1,107 @@
 "use client"
 
 import type React from "react"
-
 import { useState } from "react"
+import { Trash2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { useProducts } from "@/hooks/use-products"
+import { useProductos } from "@/hooks/use-productos"
+import { useEffect } from "react"
+import { useAuth } from "@/hooks/use-auth" // ⚠️ Asegurate de importar tu hook de autenticación
 import { useToast } from "@/hooks/use-toast"
-import { LoadingSpinner } from "./loading-spinner"
+import { LoadingSpinner } from "@/components/loading-spinner"
 
 export function Stock() {
-  const { products, addProduct, updateProduct, loading, error } = useProducts()
+  const {
+    productos,
+    addProducto,
+    updateProducto,
+    deleteProducto,
+    loading,
+    error,
+    
+  } = useProductos()
   const { toast } = useToast()
 
-  const [name, setName] = useState("")
-  const [description, setDescription] = useState("")
-  const [price, setPrice] = useState("")
-  const [stock, setStock] = useState("")
+  // State for the form
+  const [nombre, setNombre] = useState("")
+  const [precioVenta, setPrecioVenta] = useState("")
+  const [precioCosto, setPrecioCosto] = useState("")
+  const [stockActual, setStockActual] = useState("")
+  const [categoria, setCategoria] = useState("")
+  const [proveedores, setProveedores] = useState("")
   const [editingProductId, setEditingProductId] = useState<string | null>(null)
+  const { user } = useAuth()
 
-  const handleEdit = (product: (typeof products)[0]) => {
-    setEditingProductId(product.id)
-    setName(product.name)
-    setDescription(product.description || "")
-    setPrice(product.price.toString())
-    setStock(product.stock.toString())
+useEffect(() => {console.log("🪪 Usuario autenticado:", user?.id)}, [user])
+
+
+  // Helper para parsear números y manejar la coma como separador decimal
+  const parseLocaleNumber = (stringNumber: string) => {
+    if (typeof stringNumber !== "string") return NaN
+    const sanitizedString = stringNumber.replace(",", ".")
+    return parseFloat(sanitizedString)
+  }
+  const handleDelete = async (productId: string) => {
+    if (!window.confirm("¿Estás seguro de que quieres eliminar este producto?")) return
+    try {
+      await deleteProducto(productId)
+      toast({
+        title: "Producto eliminado",
+
+        content: "El producto se ha eliminado exitosamente.",
+      })
+    } catch (err: any) {
+      toast({
+        title: "Error al eliminar",
+        content: err.message || "Ocurrió un error inesperado.",
+        variant: "destructive",
+      })
+    }
   }
 
-  const handleCancelEdit = () => {
+  const resetForm = () => {
     setEditingProductId(null)
-    setName("")
-    setDescription("")
-    setPrice("")
-    setStock("")
+    setNombre("")
+    setPrecioVenta("")
+    setPrecioCosto("")
+    setStockActual("")
+    setCategoria("")
+    setProveedores("")
+  }
+
+  const handleEdit = (product: (typeof productos)[0]) => {
+    setEditingProductId(product.id)
+    setNombre(product.nombre)
+    setPrecioVenta(product.precio_venta.toString())
+    setPrecioCosto(product.precio_costo.toString())
+    setStockActual(product.stock_actual.toString())
+    setCategoria(product.categoria || "")
+    setProveedores(product.proveedores || "")
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!name || !price || !stock) {
-      toast({
-        title: "Error",
-        description: "Por favor, completa todos los campos requeridos.",
-        variant: "destructive",
-      })
-      return
-    }
 
-    const parsedPrice = Number.parseFloat(price)
-    const parsedStock = Number.parseInt(stock)
+    const parsedPrecioVenta = parseLocaleNumber(precioVenta)
+    const parsedPrecioCosto = parseLocaleNumber(precioCosto)
+    const parsedStock = parseInt(stockActual, 10)
 
-    if (isNaN(parsedPrice) || parsedPrice <= 0) {
+    if (
+      !nombre ||
+      isNaN(parsedPrecioVenta) ||
+      parsedPrecioVenta <= 0 ||
+      isNaN(parsedStock) ||
+      parsedStock < 0 ||
+      isNaN(parsedPrecioCosto) ||
+      parsedPrecioCosto < 0
+    ) {
       toast({
         title: "Error",
-        description: "El precio debe ser un número positivo.",
-        variant: "destructive",
-      })
-      return
-    }
-    if (isNaN(parsedStock) || parsedStock < 0) {
-      toast({
-        title: "Error",
-        description: "El stock debe ser un número entero no negativo.",
+        description: "Completa todos los campos correctamente.",
         variant: "destructive",
       })
       return
@@ -71,33 +109,37 @@ export function Stock() {
 
     try {
       if (editingProductId) {
-        await updateProduct(editingProductId, {
-          name,
-          description: description || null,
-          price: parsedPrice,
-          stock: parsedStock,
+        await updateProducto(editingProductId, {
+          nombre: nombre,
+          precio_venta: parsedPrecioVenta,
+          precio_costo: parsedPrecioCosto,
+          stock_actual: parsedStock,
+          categoria,
+          proveedores,
         })
         toast({
           title: "Producto actualizado",
           description: "El producto se ha actualizado exitosamente.",
         })
       } else {
-        await addProduct({
-          name,
-          description: description || null,
-          price: parsedPrice,
-          stock: parsedStock,
+        await addProducto({
+          nombre: nombre,
+          precio_venta: parsedPrecioVenta,
+          precio_costo: parsedPrecioCosto,
+          stock_actual: parsedStock,
+          categoria,
+          proveedores,
         })
         toast({
           title: "Producto registrado",
-          description: "El producto se ha registrado exitosamente.",
+          content: "El producto se ha registrado exitosamente.",
         })
       }
-      handleCancelEdit() // Clear form and exit edit mode
+      resetForm()
     } catch (err: any) {
       toast({
         title: `Error al ${editingProductId ? "actualizar" : "registrar"} producto`,
-        description: err.message || "Ocurrió un error inesperado.",
+        content: err.message || "Ocurrió un error inesperado.",
         variant: "destructive",
       })
     }
@@ -125,61 +167,38 @@ export function Stock() {
       <form onSubmit={handleSubmit} className="grid gap-4 rounded-lg border p-4">
         <h3 className="text-lg font-semibold">{editingProductId ? "Editar Producto" : "Registrar Nuevo Producto"}</h3>
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-          <div className="space-y-2">
-            <Label htmlFor="name">Nombre del Producto</Label>
-            <Input
-              id="name"
-              placeholder="Nombre del producto"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              required
-            />
+          <div className="space-y-2 md:col-span-2">
+            <Label htmlFor="nombre">Nombre del Producto</Label>
+            <Input id="nombre" value={nombre} onChange={(e) => setNombre(e.target.value)} required />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="price">Precio</Label>
-            <Input
-              id="price"
-              type="number"
-              step="0.01"
-              placeholder="0.00"
-              value={price}
-              onChange={(e) => setPrice(e.target.value)}
-              required
-            />
+            <Label htmlFor="precioVenta">Precio de Venta</Label>
+            <Input id="precioVenta" type="number" step="0.01" value={precioVenta} onChange={(e) => setPrecioVenta(e.target.value)} required />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="precioCosto">Precio de Costo</Label>
+            <Input id="precioCosto" type="number" step="0.01" value={precioCosto} onChange={(e) => setPrecioCosto(e.target.value)} required />
           </div>
           <div className="space-y-2">
             <Label htmlFor="stock">Stock</Label>
-            <Input
-              id="stock"
-              type="number"
-              min="0"
-              placeholder="0"
-              value={stock}
-              onChange={(e) => setStock(e.target.value)}
-              required
-            />
+            <Input id="stock" type="number" min="0" value={stockActual} onChange={(e) => setStockActual(e.target.value)} required />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="description">Descripción (opcional)</Label>
-            <Textarea
-              id="description"
-              placeholder="Descripción del producto"
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-            />
+            <Label htmlFor="categoria">Categoría</Label>
+            <Input id="categoria" value={categoria} onChange={(e) => setCategoria(e.target.value)} />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="proveedores">Proveedor</Label>
+            <Input id="proveedores" value={proveedores} onChange={(e) => setProveedores(e.target.value)} />
           </div>
         </div>
         <div className="flex gap-2">
           <Button type="submit" className="w-full md:w-auto">
             {editingProductId ? "Actualizar Producto" : "Registrar Producto"}
           </Button>
+
           {editingProductId && (
-            <Button
-              type="button"
-              variant="outline"
-              onClick={handleCancelEdit}
-              className="w-full md:w-auto bg-transparent"
-            >
+            <Button type="button" variant="outline" onClick={resetForm}>
               Cancelar
             </Button>
           )}
@@ -192,29 +211,37 @@ export function Stock() {
           <TableHeader>
             <TableRow>
               <TableHead>Nombre</TableHead>
-              <TableHead>Descripción</TableHead>
-              <TableHead>Precio</TableHead>
+              <TableHead>Precio Venta</TableHead>
+              <TableHead>Precio Costo</TableHead>
               <TableHead>Stock</TableHead>
+              <TableHead>Categoría</TableHead>
+              <TableHead>Proveedor</TableHead>
               <TableHead>Acciones</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            {products.length === 0 ? (
+            {productos.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={5} className="h-24 text-center">
+                <TableCell colSpan={7} className="h-24 text-center">
                   No hay productos registrados.
                 </TableCell>
               </TableRow>
             ) : (
-              products.map((product) => (
+              productos.map((product) => (
                 <TableRow key={product.id}>
-                  <TableCell>{product.name}</TableCell>
-                  <TableCell>{product.description || "-"}</TableCell>
-                  <TableCell>${product.price.toFixed(2)}</TableCell>
-                  <TableCell>{product.stock}</TableCell>
-                  <TableCell>
+                  <TableCell>{product.nombre}</TableCell>
+                  <TableCell>${product.precio_venta.toFixed(2)}</TableCell>
+                  <TableCell>${product.precio_costo.toFixed(2)}</TableCell>
+                  <TableCell>{product.stock_actual}</TableCell>
+                  <TableCell>{product.categoria || "-"}</TableCell>
+                  <TableCell>{product.proveedores || "-"}</TableCell>
+                  <TableCell className="flex gap-2 whitespace-nowrap">
                     <Button variant="outline" size="sm" onClick={() => handleEdit(product)}>
                       Editar
+                    </Button>
+                    <Button variant="destructive" size="sm" onClick={() => handleDelete(product.id)}>
+                      <Trash2 className="h-4 w-4" />
+                      <span className="sr-only">Eliminar</span>
                     </Button>
                   </TableCell>
                 </TableRow>

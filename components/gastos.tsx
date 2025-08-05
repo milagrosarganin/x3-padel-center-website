@@ -12,8 +12,8 @@ import { useExpenses } from "@/hooks/use-expenses"
 import { useToast } from "@/hooks/use-toast"
 import { format } from "date-fns"
 import { es } from "date-fns/locale"
-import { LoadingSpinner } from "./loading-spinner"
-import { ExportButton } from "./export-button"
+import { LoadingSpinner } from "@/components/loading-spinner"
+import { ExportButton } from "@/components/export-button"
 
 export function Gastos() {
   const { expenses, addExpense, loading, error } = useExpenses()
@@ -67,7 +67,7 @@ export function Gastos() {
   }
 
   const expenseHeaders = [
-    { key: "expense_date", label: "Fecha" },
+    { key: "fecha", label: "Fecha" },
     { key: "description", label: "Descripción" },
     { key: "amount", label: "Monto" },
     { key: "category", label: "Categoría" },
@@ -138,7 +138,7 @@ export function Gastos() {
           <ExportButton
             data={expenses.map((exp) => ({
               ...exp,
-              expense_date: format(new Date(exp.expense_date), "dd/MM/yyyy", { locale: es }),
+              fecha: format(new Date(exp.fecha), "dd/MM/yyyy", { locale: es }),
               amount: exp.amount.toFixed(2),
             }))}
             headers={expenseHeaders}
@@ -164,7 +164,7 @@ export function Gastos() {
             ) : (
               expenses.map((expense) => (
                 <TableRow key={expense.id}>
-                  <TableCell>{format(new Date(expense.expense_date), "dd/MM/yyyy", { locale: es })}</TableCell>
+                  <TableCell>{format(new Date(expense.fecha), "dd/MM/yyyy", { locale: es })}</TableCell>
                   <TableCell>{expense.description}</TableCell>
                   <TableCell>${expense.amount.toFixed(2)}</TableCell>
                   <TableCell>{expense.category || "-"}</TableCell>

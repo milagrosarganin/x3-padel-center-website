@@ -2,14 +2,14 @@
 
 import { useState, useEffect, useCallback } from "react"
 import { createClient } from "@/lib/supabase"
-import { useAuth } from "./use-auth"
+import { useAuth } from "@/hooks/use-auth"
 
 interface Expense {
   id: string
   user_id: string
   description: string
   amount: number
-  expense_date: string
+  fecha: string
   category: string | null
   created_at: string
 }
@@ -30,10 +30,10 @@ export function useExpenses() {
     setError(null)
     try {
       const { data, error: fetchError } = await supabase
-        .from("expenses")
+        .from("gastos")
         .select("*")
         .eq("user_id", user.id)
-        .order("expense_date", { ascending: false })
+        .order("fecha", { ascending: false })
 
       if (fetchError) throw fetchError
       setExpenses(data || [])
@@ -49,13 +49,13 @@ export function useExpenses() {
     fetchExpenses()
   }, [fetchExpenses])
 
-  const addExpense = async (newExpense: Omit<Expense, "id" | "user_id" | "expense_date" | "created_at">) => {
+  const addExpense = async (newExpense: Omit<Expense, "id" | "user_id" | "fecha" | "created_at">) => {
     if (!user) throw new Error("User not authenticated.")
     setLoading(true)
     setError(null)
     try {
       const { data, error: insertError } = await supabase
-        .from("expenses")
+        .from("gastos")
         .insert({ ...newExpense, user_id: user.id })
         .select()
         .single()

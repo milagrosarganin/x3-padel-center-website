@@ -2,12 +2,12 @@
 
 import { useState, useEffect, useCallback } from "react"
 import { createClient } from "@/lib/supabase"
-import { useAuth } from "./use-auth"
+import { useAuth } from "@/hooks/use-auth"
 
 interface Product {
   id: string
   user_id: string
-  name: string
+  nombre: string
   description: string | null
   price: number
   stock: number
@@ -30,10 +30,10 @@ export function useProducts() {
     setError(null)
     try {
       const { data, error: fetchError } = await supabase
-        .from("products")
+        .from("productos")
         .select("*")
         .eq("user_id", user.id)
-        .order("name", { ascending: true })
+        .order("nombre", { ascending: true })
 
       if (fetchError) throw fetchError
       setProducts(data || [])
@@ -55,7 +55,7 @@ export function useProducts() {
     setError(null)
     try {
       const { data, error: insertError } = await supabase
-        .from("products")
+        .from("productos")
         .insert({ ...newProduct, user_id: user.id })
         .select()
         .single()
@@ -78,7 +78,7 @@ export function useProducts() {
     setError(null)
     try {
       const { data, error: updateError } = await supabase
-        .from("products")
+        .from("productos")
         .update(updates)
         .eq("id", id)
         .eq("user_id", user.id)
@@ -97,5 +97,5 @@ export function useProducts() {
     }
   }
 
-  return { products, addProduct, updateProduct, loading, error, fetchProducts }
+  return { products, addProduct, updateProduct, deleteProduct, loading, error, fetchProducts }
 }
