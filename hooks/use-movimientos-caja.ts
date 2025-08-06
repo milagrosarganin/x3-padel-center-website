@@ -41,7 +41,7 @@ export function useMovimientosCaja() {
         .from("movimientos_caja")
         .select("*")
         .eq("user_id", user.id)
-        .order("movement_date", { ascending: false })
+        .order("fecha", { ascending: false })
 
       if (fetchError) throw fetchError
       setMovimientos(data || [])
@@ -66,7 +66,7 @@ export function useMovimientosCaja() {
         .insert({
           ...newMovimiento,
           user_id: user.id,
-          movement_date: new Date().toISOString(),
+          fecha: new Date().toISOString(),
         })
         .select()
         .single()

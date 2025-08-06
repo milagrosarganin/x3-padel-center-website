@@ -34,7 +34,7 @@ export function useSuppliers() {
         .from("proveedores")
         .select("*")
         .eq("user_id", user.id)
-        .order("nombre", { ascending: true })
+        .order("name", { ascending: true })
 
       if (fetchError) throw fetchError
       setSuppliers(data || [])
