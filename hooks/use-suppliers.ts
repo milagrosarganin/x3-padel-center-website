@@ -22,7 +22,7 @@ export function useSuppliers() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<Error | null>(null)
 
-  const fetchSuppliers = useCallback(async () => {
+  const fetchSuppliersCallback = useCallback(async () => {
     if (!user) {
       setLoading(false)
       return
@@ -31,7 +31,7 @@ export function useSuppliers() {
     setError(null)
     try {
       const { data, error: fetchError } = await supabase
-        .from("proveedores")
+        .from('proveedores')
         .select("*")
         .eq("user_id", user.id)
         .order("name", { ascending: true })
@@ -39,7 +39,7 @@ export function useSuppliers() {
       if (fetchError) throw fetchError
       setSuppliers(data || [])
     } catch (err: any) {
-      setError(err)
+      setError(new Error(`Error al obtener proveedores: ${err.message}`))
       console.error("Error fetching suppliers:", err.message)
     } finally {
       setLoading(false)
@@ -47,27 +47,31 @@ export function useSuppliers() {
   }, [user, supabase])
 
   useEffect(() => {
-    fetchSuppliers()
-  }, [fetchSuppliers])
+    fetchSuppliersCallback()
+  }, [fetchSuppliersCallback])
 
-  const addSupplier = async (newSupplier: Omit<Supplier, "id" | "user_id" | "created_at">) => {
+  const addSupplier = async (
+    newSupplier: Omit<Supplier, "id" | "user_id" | "created_at">
+  ): Promise<Supplier | null> => {
     if (!user) throw new Error("Usuario no autenticado.")
     setLoading(true)
     setError(null)
     try {
       const { data: inserted, error: insertError } = await supabase
-        .from("proveedores")
+        .from('proveedores')
         .insert({ ...newSupplier, user_id: user.id })
         .select()
         .single()
 
       if (insertError) throw insertError
-      setSuppliers((prev) => [inserted, ...prev])
+      setSuppliers((prev) =>
+        [...prev, inserted].sort((a, b) => a.name.localeCompare(b.name))
+      )
       return inserted
     } catch (err: any) {
       setError(err)
       console.error("Error adding supplier:", err.message)
-      throw err
+      return null
     } finally {
       setLoading(false)
     }
@@ -76,24 +80,35 @@ export function useSuppliers() {
   const updateSupplier = async (
     id: string,
     updates: Partial<Omit<Supplier, "id" | "user_id" | "created_at">>
-  ) => {
-    const { error: updateError } = await supabase
-      .from("proveedores")
-      .update(updates)
-      .eq("id", id)
+  ): Promise<boolean> => {
+    setLoading(true)
+    setError(null)
+    try {
+      const { error: updateError } = await supabase
+        .from('proveedores')
+        .update(updates)
+        .eq("id", id)
 
-    if (updateError) {
-      setError(updateError)
+      if (updateError) {
+        setError(updateError)
+        return false
+      } else {
+        await fetchSuppliersCallback()
+        return true
+      }
+    } catch (err: any) {
+      setError(err)
+      console.error("Error updating supplier:", err.message)
       return false
-    } else {
-      await fetchSuppliers()
+    } finally {
+      await fetchSuppliersCallback()
       return true
     }
   }
 
   const deleteSupplier = async (id: string) => {
     const { error: deleteError } = await supabase
-      .from("proveedores")
+      .from('proveedores')
       .delete()
       .eq("id", id)
 
@@ -102,7 +117,7 @@ export function useSuppliers() {
     } else {
       // Volvemos a cargar los proveedores para asegurar que la lista esté actualizada.
       // Es más seguro que modificar el estado localmente.
-      await fetchSuppliers()
+      await fetchSuppliersCallback()
       return true
     }
   }
@@ -114,6 +129,6 @@ export function useSuppliers() {
     deleteSupplier,
     loading,
     error,
-    fetchSuppliers
+    fetchSuppliers: fetchSuppliersCallback
   }
 }

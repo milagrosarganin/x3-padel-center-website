@@ -1,4 +1,7 @@
+"use client";
+
 import { createBrowserClient } from "@supabase/ssr"
+// lib/supabase.ts
 
 // Esta función se asegura de que las variables de entorno existan.
 // Se llamará una sola vez.

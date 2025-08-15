@@ -1,22 +1,55 @@
 "use client"
+
+import { useEffect, useState } from "react"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { useSales } from "@/hooks/use-sales"
-import { useToast } from "@/hooks/use-toast"
+import { useToast } from "@/components/ui/use-toast"
 import { format } from "date-fns"
 import { es } from "date-fns/locale"
 import { LoadingSpinner } from "@/components/loading-spinner"
 import { ExportButton } from "@/components/export-button"
+import { supabase } from "@/lib/supabase"
+
+interface Sale {
+  id: string
+  fecha: string
+  total: number
+  metodo_pago: string | null
+  origen: string | null
+}
 
 export function HistorialVentas() {
-  const { sales, loading, error } = useSales()
   const { toast } = useToast()
+  const [sales, setSales] = useState<Sale[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<Error | null>(null)
+
+  useEffect(() => {
+    const fetchSales = async () => {
+      const { data, error } = await supabase
+        .from("ventas")
+        .select("id, fecha, total, metodo_pago, origen")
+        .order("fecha", { ascending: false })
+
+      if (error) {
+        setError(error)
+        toast({ title: "Error al cargar ventas", description: error.message })
+      } else {
+        setSales(data as Sale[])
+      }
+
+      setLoading(false)
+    }
+
+    fetchSales()
+  }, [toast])
 
   const salesHeaders = [
-    { key: "fecha", label: "Fecha" },
-    { key: "total", label: "Total" },
-    { key: "metodo_pago", label: "Método de Pago" },
-    { key: "origen", label: "Origen" },
-  ] // Use array for type inference
+  { key: "fecha", label: "Fecha" },
+  { key: "total", label: "Total" },
+  { key: "metodo_pago", label: "Método de Pago" },
+  { key: "origen", label: "Origen" },
+] as const
+
 
   if (loading) {
     return (
@@ -41,7 +74,7 @@ export function HistorialVentas() {
         <div className="flex items-center justify-between p-4">
           <h3 className="text-lg font-semibold">Listado de Ventas</h3>
           <ExportButton
-            data={sales.map((sale) => ({
+            data={sales.map((sale: Sale) => ({
               ...sale,
               fecha: format(new Date(sale.fecha), "dd/MM/yyyy HH:mm", { locale: es }),
               total: sale.total.toFixed(2),
@@ -67,7 +100,7 @@ export function HistorialVentas() {
                 </TableCell>
               </TableRow>
             ) : (
-              sales.map((sale) => (
+              sales.map((sale: Sale) => (
                 <TableRow key={sale.id}>
                   <TableCell>{format(new Date(sale.fecha), "dd/MM/yyyy HH:mm", { locale: es })}</TableCell>
                   <TableCell>${sale.total.toFixed(2)}</TableCell>
@@ -75,7 +108,6 @@ export function HistorialVentas() {
                   <TableCell>{sale.origen || "-"}</TableCell>
                 </TableRow>
               ))
-
             )}
           </TableBody>
         </Table>

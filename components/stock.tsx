@@ -31,8 +31,9 @@ export function Stock() {
   const [precioVenta, setPrecioVenta] = useState("")
   const [precioCosto, setPrecioCosto] = useState("")
   const [stockActual, setStockActual] = useState("")
+  const [stockMinimo, setStockMinimo] = useState("")
   const [categoria, setCategoria] = useState("")
-  const [proveedores, setProveedores] = useState("")
+  const [proveedor, setProveedor] = useState("")
   const [editingProductId, setEditingProductId] = useState<string | null>(null)
   const { user } = useAuth()
 
@@ -51,13 +52,12 @@ useEffect(() => {console.log("🪪 Usuario autenticado:", user?.id)}, [user])
       await deleteProducto(productId)
       toast({
         title: "Producto eliminado",
-
-        content: "El producto se ha eliminado exitosamente.",
+        description: "El producto se ha eliminado exitosamente.",
       })
     } catch (err: any) {
       toast({
         title: "Error al eliminar",
-        content: err.message || "Ocurrió un error inesperado.",
+        description: err.message || "Ocurrió un error inesperado.",
         variant: "destructive",
       })
     }
@@ -69,8 +69,9 @@ useEffect(() => {console.log("🪪 Usuario autenticado:", user?.id)}, [user])
     setPrecioVenta("")
     setPrecioCosto("")
     setStockActual("")
+    setStockMinimo("")
     setCategoria("")
-    setProveedores("")
+    setProveedor("")
   }
 
   const handleEdit = (product: (typeof productos)[0]) => {
@@ -79,8 +80,9 @@ useEffect(() => {console.log("🪪 Usuario autenticado:", user?.id)}, [user])
     setPrecioVenta(product.precio_venta.toString())
     setPrecioCosto(product.precio_costo.toString())
     setStockActual(product.stock_actual.toString())
+    setStockMinimo(product.stock_minimo.toString())
     setCategoria(product.categoria || "")
-    setProveedores(product.proveedores || "")
+    setProveedor(product.proveedor || "")
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -89,6 +91,7 @@ useEffect(() => {console.log("🪪 Usuario autenticado:", user?.id)}, [user])
     const parsedPrecioVenta = parseLocaleNumber(precioVenta)
     const parsedPrecioCosto = parseLocaleNumber(precioCosto)
     const parsedStock = parseInt(stockActual, 10)
+    const parsedStockMinimo = parseInt(stockMinimo, 10)
 
     if (
       !nombre ||
@@ -97,11 +100,13 @@ useEffect(() => {console.log("🪪 Usuario autenticado:", user?.id)}, [user])
       isNaN(parsedStock) ||
       parsedStock < 0 ||
       isNaN(parsedPrecioCosto) ||
-      parsedPrecioCosto < 0
+      parsedPrecioCosto < 0 ||
+      isNaN(parsedStockMinimo) ||
+      parsedStockMinimo < 0
     ) {
       toast({
         title: "Error",
-        description: "Completa todos los campos correctamente.",
+        description: "Completa todos los campos. Los precios y stocks deben ser números válidos y positivos.",
         variant: "destructive",
       })
       return
@@ -114,8 +119,9 @@ useEffect(() => {console.log("🪪 Usuario autenticado:", user?.id)}, [user])
           precio_venta: parsedPrecioVenta,
           precio_costo: parsedPrecioCosto,
           stock_actual: parsedStock,
+          stock_minimo: parsedStockMinimo,
           categoria,
-          proveedores,
+          proveedor,
         })
         toast({
           title: "Producto actualizado",
@@ -127,19 +133,20 @@ useEffect(() => {console.log("🪪 Usuario autenticado:", user?.id)}, [user])
           precio_venta: parsedPrecioVenta,
           precio_costo: parsedPrecioCosto,
           stock_actual: parsedStock,
+          stock_minimo: parsedStockMinimo,
           categoria,
-          proveedores,
+          proveedor,
         })
         toast({
           title: "Producto registrado",
-          content: "El producto se ha registrado exitosamente.",
+          description: "El producto se ha registrado exitosamente.",
         })
       }
       resetForm()
     } catch (err: any) {
       toast({
         title: `Error al ${editingProductId ? "actualizar" : "registrar"} producto`,
-        content: err.message || "Ocurrió un error inesperado.",
+        description: err.message || "Ocurrió un error inesperado.",
         variant: "destructive",
       })
     }
@@ -184,12 +191,16 @@ useEffect(() => {console.log("🪪 Usuario autenticado:", user?.id)}, [user])
             <Input id="stock" type="number" min="0" value={stockActual} onChange={(e) => setStockActual(e.target.value)} required />
           </div>
           <div className="space-y-2">
+            <Label htmlFor="stockMinimo">Stock Mínimo</Label>
+            <Input id="stockMinimo" type="number" min="0" value={stockMinimo} onChange={(e) => setStockMinimo(e.target.value)} required />
+          </div>
+          <div className="space-y-2">
             <Label htmlFor="categoria">Categoría</Label>
             <Input id="categoria" value={categoria} onChange={(e) => setCategoria(e.target.value)} />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="proveedores">Proveedor</Label>
-            <Input id="proveedores" value={proveedores} onChange={(e) => setProveedores(e.target.value)} />
+            <Label htmlFor="proveedor">Proveedor</Label>
+            <Input id="proveedor" value={proveedor} onChange={(e) => setProveedor(e.target.value)} />
           </div>
         </div>
         <div className="flex gap-2">
@@ -214,6 +225,7 @@ useEffect(() => {console.log("🪪 Usuario autenticado:", user?.id)}, [user])
               <TableHead>Precio Venta</TableHead>
               <TableHead>Precio Costo</TableHead>
               <TableHead>Stock</TableHead>
+              <TableHead>Stock Mínimo</TableHead>
               <TableHead>Categoría</TableHead>
               <TableHead>Proveedor</TableHead>
               <TableHead>Acciones</TableHead>
@@ -222,7 +234,7 @@ useEffect(() => {console.log("🪪 Usuario autenticado:", user?.id)}, [user])
           <TableBody>
             {productos.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={7} className="h-24 text-center">
+                <TableCell colSpan={8} className="h-24 text-center">
                   No hay productos registrados.
                 </TableCell>
               </TableRow>
@@ -233,8 +245,9 @@ useEffect(() => {console.log("🪪 Usuario autenticado:", user?.id)}, [user])
                   <TableCell>${product.precio_venta.toFixed(2)}</TableCell>
                   <TableCell>${product.precio_costo.toFixed(2)}</TableCell>
                   <TableCell>{product.stock_actual}</TableCell>
+                  <TableCell>{product.stock_minimo}</TableCell>
                   <TableCell>{product.categoria || "-"}</TableCell>
-                  <TableCell>{product.proveedores || "-"}</TableCell>
+                  <TableCell>{product.proveedor || "-"}</TableCell>
                   <TableCell className="flex gap-2 whitespace-nowrap">
                     <Button variant="outline" size="sm" onClick={() => handleEdit(product)}>
                       Editar

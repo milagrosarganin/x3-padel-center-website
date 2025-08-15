@@ -34,13 +34,13 @@ export default function DashboardPage() {
     if (error) {
       toast({
         title: "Error al cerrar sesión",
-        content: error.message,
+        description: error.message,
         variant: "destructive",
       })
     } else {
       toast({
         title: "Sesión cerrada",
-        content: "Has cerrado sesión exitosamente.",
+        description: "Has cerrado sesión exitosamente.",
       })
       router.push("/login")
     }

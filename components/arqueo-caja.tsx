@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { createClient } from "@/lib/supabase"
+import { supabase } from "@/lib/supabase"
 import { useAuth } from "@/hooks/use-auth"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
@@ -9,13 +9,16 @@ import { Card, CardHeader, CardContent } from "@/components/ui/card"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { toast } from "@/components/ui/use-toast"
+import { cerrarArqueo } from "@/hooks/use-arqueo"
+import HistorialArqueos from "@/components/HistorialArqueos"
+
 
 export default function ArqueoCaja() {
-  const supabase = createClient()
   const { user } = useAuth()
 
   const [arqueoAbierto, setArqueoAbierto] = useState<any>(null)
   const [saldoInicial, setSaldoInicial] = useState("")
+  const [saldoReal, setSaldoReal] = useState("")
   const [comentario, setComentario] = useState("")
   const [loading, setLoading] = useState(false)
 
@@ -23,17 +26,16 @@ export default function ArqueoCaja() {
     Efectivo: "Efectivo",
     Tarjeta: "Tarjeta",
     Transferencia: "Transferencia",
+    Cuenta: "Cuenta corriente",
+    QR: "QR",
     Otro: "Otro",
   }
 
-  // Usamos las llaves del objeto de etiquetas como la fuente de verdad para los medios de pago.
-  // Esto asegura consistencia con el componente Mostrador.
   const medios = Object.keys(paymentMethodLabels)
 
   const [ventasTotales, setVentasTotales] = useState<any>({})
   const [gastosTotales, setGastosTotales] = useState<any>({})
 
-  // 1. Cargar arqueo abierto si hay
   const fetchArqueoAbierto = async () => {
     if (!user) return
     const { data, error } = await supabase
@@ -47,7 +49,6 @@ export default function ArqueoCaja() {
     }
   }
 
-  // 2. Cargar ventas y gastos para ese usuario
   const fetchVentasYGastos = async () => {
     if (!user || !arqueoAbierto) return
 
@@ -59,21 +60,21 @@ export default function ArqueoCaja() {
 
     const { data: movimientos } = await supabase
       .from("movimientos_caja")
-      .select("tipo, amount")
+      .select("tipo, amount, metodo_pago")
       .eq("user_id", user.id)
       .gte("created_at", arqueoAbierto.fecha_apertura)
 
     const ventasSum = Object.fromEntries(medios.map((m) => [m, 0]))
     ventas?.forEach((v) => {
-      const metodo = v.metodo_pago || "cash" // Corregido para usar 'cash' como default
+      const metodo = v.metodo_pago || "Otro"
       ventasSum[metodo] = (ventasSum[metodo] || 0) + v.total
     })
 
     const gastosSum = Object.fromEntries(medios.map((m) => [m, 0]))
     movimientos?.forEach((m) => {
-      if (m.tipo === "Egreso") {
-        // Asumimos que todos los gastos son en efectivo por ahora
-        gastosSum["cash"] += m.amount
+      if (m.tipo === "egreso") {
+        const metodo = m.metodo_pago || "Efectivo"
+        gastosSum[metodo] = (gastosSum[metodo] || 0) + m.amount
       }
     })
 
@@ -93,7 +94,6 @@ export default function ArqueoCaja() {
     }
   }, [arqueoAbierto])
 
-  // 3. Iniciar arqueo
   const iniciarArqueo = async () => {
     setLoading(true)
     try {
@@ -121,41 +121,35 @@ export default function ArqueoCaja() {
     } finally {
       setLoading(false)
     }
+      if (!user) {
+        toast({ title: "No hay usuario encontrado" })
+        return
+    }
   }
 
-  // 4. Finalizar arqueo
-  const finalizarArqueo = async () => {
+  const handleCerrarArqueo = async () => {
     setLoading(true)
     try {
-      const diferencia = parseFloat(saldoInicial || "0") +
-        (Object.values(ventasTotales) as number[]).reduce((a, b) => a + b, 0) -
-        (Object.values(gastosTotales) as number[]).reduce((a, b) => a + b, 0)
-
-      const { error } = await supabase
-        .from("arqueo_caja")
-        .update({
-          fecha_cierre: new Date().toISOString(),
-          saldo_final: null,
-          diferencia,
-          ...Object.fromEntries(
-            medios.map((m) => [`ventas_${m}`, ventasTotales[m] || 0])
-          ),
-          ...Object.fromEntries(
-            medios.map((m) => [`gastos_${m}`, gastosTotales[m] || 0])
-          ),
-        })
-        .eq("id", arqueoAbierto.id)
-
-      if (error) throw error
-
+            if (!user) {
+        toast({ title: "Usuario no encontrado" })
+        return
+      }
+      await cerrarArqueo(supabase, user.id, parseFloat(saldoReal || "0"))
       setArqueoAbierto(null)
-      toast({ title: "Arqueo finalizado" })
-    } catch (err: any) {
-      console.error(err)
-      toast({ title: "Error al finalizar arqueo", description: err.message })
+      toast({ title: "Arqueo finalizado correctamente" })
+    } catch (error: any) {
+      console.error("Error al cerrar arqueo:", error)
+      toast({ title: "Error al cerrar arqueo", description: error.message })
     } finally {
       setLoading(false)
     }
+  }
+
+  const calcularDiferencia = () => {
+    const totalVentas = (Object.values(ventasTotales)as number[]).reduce((a, b) => a + b, 0)
+    const totalGastos = (Object.values(gastosTotales)as number[]).reduce((a, b) => a + b, 0)
+    const saldoTeorico = arqueoAbierto?.saldo_inicial + totalVentas - totalGastos
+    return parseFloat(saldoReal || "0") - saldoTeorico
   }
 
   return (
@@ -215,8 +209,25 @@ export default function ArqueoCaja() {
               ))}
             </div>
 
+            <div className="mb-4">
+              <Label>Saldo Real Contado (en caja):</Label>
+              <Input
+                type="number"
+                value={saldoReal}
+                onChange={(e) => setSaldoReal(e.target.value)}
+                placeholder="Ej: 35000"
+              />
+            </div>
+
+            <div className="mb-4 text-sm text-muted-foreground">
+              Diferencia estimada:{" "}
+              <span className="font-bold">
+                ${calcularDiferencia().toFixed(2)}
+              </span>
+            </div>
+
             <Button
-              onClick={finalizarArqueo}
+              onClick={handleCerrarArqueo}
               variant="destructive"
               disabled={loading}
             >
@@ -224,6 +235,14 @@ export default function ArqueoCaja() {
             </Button>
           </>
         )}
+        <div className="mt-6">
+          <Label>Historial de Arqueos</Label>
+        </div>
+        <p className="text-sm text-muted-foreground mb-2">
+          Aquí puedes ver el historial de arqueos realizados.
+        </p>
+        <HistorialArqueos />
+
       </CardContent>
     </Card>
   )

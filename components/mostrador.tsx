@@ -7,9 +7,11 @@ import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { useProductos } from "@/hooks/use-productos"
-import { useSales } from "@/hooks/use-sales"
+import { useSales, type MetodoPago } from "@/hooks/use-sales"
 import { useToast } from "@/hooks/use-toast"
 import { LoadingSpinner } from "@/components/loading-spinner"
+import SelectorMesa from "@/components/SelectorMesa"
+
 
 interface CartItem {
   id: string
@@ -19,23 +21,26 @@ interface CartItem {
   stock_actual: number
 }
 
-const paymentMethodLabels: Record<string, string> = {
-  cash: "Efectivo",
-  card: "Tarjeta",
-  transfer: "Transferencia",
-  other: "Otro",
+const paymentMethodLabels: Record<MetodoPago, string> = {
+  Efectivo: "Efectivo",
+  Tarjeta: "Tarjeta",
+  Transferencia: "Transferencia",
+  Cuenta: "Cuenta Corriente",
+  QR: "QR",
+  Descuento: "Descuento",
 }
 
 export function Mostrador() {
   const { productos, loading: productsLoading, error: productsError } = useProductos()
-  const { addSale, loading: salesLoading } = useSales()
+  const { addSale, loading: salesLoading, error: salesError } = useSales()
   const { toast } = useToast()
 
   const [selectedProductId, setSelectedProductId] = useState<string>("")
   const [quantity, setQuantity] = useState(1)
   const [cart, setCart] = useState<CartItem[]>([])
-  const [paymentMethod, setPaymentMethod] = useState<string>("cash")
+  const [paymentMethod, setPaymentMethod] = useState<MetodoPago>("Efectivo")
   const selectedProduct = productos.find((p) => p.id === selectedProductId)
+  const [mesaId, setMesaId] = useState<string | null>(null)
 
 
   const handleAddToCart = () => {
@@ -98,12 +103,26 @@ export function Mostrador() {
     }
 
     try {
+      console.log("DEBUG venta → mesaId:", mesaId, "typeof:", typeof mesaId);
+      console.table(
+        cart.map(i => ({
+          nombre: i.nombre,
+          product_id: i.id,
+          typeof_product_id: typeof i.id,
+          quantity: i.quantity,
+        }))
+      );
       await addSale({
-    total: totalAmount,
-    metodo_pago: paymentMethod,
-    origen: "Mostrador", // 👈 nuevo campo
-    items: cart.map((item) => ({product_id: item.id, quantity: item.quantity, price_at_sale: item.precio_venta,})),
-  })
+        total: totalAmount,
+        metodo_pago: paymentMethod,
+        origen: "Mostrador",
+        mesa_id: mesaId,
+        items: cart.map((item) => ({
+          product_id: item.id,
+          quantity: item.quantity,
+          price_at_sale: item.precio_venta,
+        })),
+    });
 
 
       toast({
@@ -113,7 +132,7 @@ export function Mostrador() {
       setCart([])
       setSelectedProductId("")
       setQuantity(1)
-      setPaymentMethod("cash")
+      setPaymentMethod("Efectivo")
     } catch (error: any) {
       console.error("Error en handleProcessSale:", error)
 
@@ -164,6 +183,8 @@ export function Mostrador() {
                 ))}
               </SelectContent>
             </Select>
+            <SelectorMesa onSelect={(id) => setMesaId(id)} />
+            {/* Si necesitas un botón para cerrar mesa, define la función y el objeto mesa primero */}
 
           </div>
           <div className="space-y-2">
@@ -224,7 +245,7 @@ export function Mostrador() {
         </div>
         <div className="space-y-2">
           <Label htmlFor="payment-method">Método de Pago</Label>
-          <Select value={paymentMethod} onValueChange={setPaymentMethod}>
+          <Select value={paymentMethod} onValueChange={(value) => setPaymentMethod(value as MetodoPago)}>
             <SelectTrigger id="payment-method">
               <SelectValue placeholder="Selecciona un método">{paymentMethodLabels[paymentMethod]}</SelectValue>
             </SelectTrigger>

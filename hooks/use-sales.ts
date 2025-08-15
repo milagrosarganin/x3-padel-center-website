@@ -1,133 +1,76 @@
 "use client"
 
-import { useState, useEffect, useCallback } from "react"
-import { createClient } from "@/lib/supabase"
+import { useCallback, useState } from "react"
+import { supabase } from "@/lib/supabase"
 import { useAuth } from "@/hooks/use-auth"
-import { useProductos } from "@/hooks/use-productos"
+import { actualizarArqueoConVenta } from "@/hooks/use-arqueo"
 
-interface SaleItem {
+export type MetodoPago = "Efectivo" | "Transferencia" | "QR" | "Tarjeta" | "Cuenta" | "Descuento";
+
+export interface NewSaleItem {
   product_id: string
   quantity: number
   price_at_sale: number
 }
 
-interface Sale {
-  id: string
-  user_id: string
-  fecha: string
+export interface NewSalePayload {
   total: number
-  metodo_pago: string | null
-  origen: string | null
-  created_at: string
-  items?: SaleItem[]
-  detalles: string | null
-}
-
-interface NewSalePayload {
-  total: number
-  metodo_pago: string | null
-  origen: string | null
-  items: SaleItem[]
+  metodo_pago: MetodoPago
+  origen?: "Mostrador" | "Turnos" | "Torneos" | "Gastro"
+  mesa_id?: string | null
+  items: NewSaleItem[]
 }
 
 export function useSales() {
-  const supabase = createClient()
   const { user } = useAuth()
-  const { fetchProductos, productos } = useProductos()
-  const [sales, setSales] = useState<Sale[]>([])
-  const [loading, setLoading] = useState(true)
+  const userId = user?.id
+  const [loading, setLoading] = useState(false)
   const [error, setError] = useState<Error | null>(null)
 
-  const fetchSales = useCallback(async () => {
-    if (!user) {
-      setLoading(false)
-      return
+  const addSale = useCallback(async (venta: NewSalePayload) => {
+    if (!userId) {
+      throw new Error("No hay usuario logueado para registrar la venta")
     }
-    setLoading(true)
-    setError(null)
-    try {
-      const { data, error: fetchError } = await supabase
-        .from("ventas")
-        .select("*")
-        .eq("user_id", user.id)
-        .order("fecha", { ascending: false })
 
-      if (fetchError) throw fetchError
-      setSales(data || [])
-    } catch (err: any) {
-      setError(err)
-      console.error("Error fetching sales:", err.message)
-    } finally {
-      setLoading(false)
-    }
-  }, [user, supabase])
-
-  useEffect(() => {
-    fetchSales()
-  }, [fetchSales])
-
-  const addSale = async (newSale: NewSalePayload) => {
-    if (!user) {
-      const authError = new Error("Usuario no autenticado.")
-      setError(authError)
-      throw authError
-    }
     setLoading(true)
     setError(null)
 
     try {
-      const { data: saleData, error: saleError } = await supabase
-        .from("ventas")
-        .insert({
-          user_id: user.id,
-          total: newSale.total,
-          metodo_pago: newSale.metodo_pago,
-          origen: newSale.origen,
-          fecha: new Date().toISOString(),
-          detalles: JSON.stringify(
-            newSale.items.map((item) => {
-              const product = productos.find((p) => p.id === item.product_id)
-              return {
-                product_id: item.product_id,
-                nombre: product?.nombre ?? "Desconocido",
-                quantity: item.quantity,
-                price_at_sale: item.price_at_sale,
-              }
-            })
-          ),
-        })
-        .select()
-        .single()
-
-      if (saleError) {
-        throw new Error(`Error al registrar la venta: ${saleError.message}`)
-      }
-
-      // Ya no insertamos en sale_items, guardamos todo en detalles (jsonb)
-
-      const stockUpdatePromises = newSale.items.map((item) => {
-        const product = productos.find((p) => p.id === item.product_id)
-        const newStock = (product?.stock_actual ?? 0) - item.quantity
-        return supabase.from("productos").update({ stock_actual: newStock }).eq("id", item.product_id)
+      // La función `procesar_venta` en la base de datos se encarga de toda la lógica de forma atómica:
+      // 1. Crea la venta.
+      // 2. Inserta los detalles de la venta.
+      // 3. Actualiza el stock de los productos.
+      // 4. Actualiza el arqueo de caja.
+      // Si algo falla, toda la transacción se revierte.
+      const { data, error: rpcError } = await supabase.rpc("procesar_venta", {
+        p_user_id: userId,
+        p_total: venta.total,
+        p_metodo_pago: venta.metodo_pago,
+        p_origen: venta.origen ?? null,
+        p_mesa_id: venta.mesa_id ?? null,
+        p_items: venta.items.map((item) => ({
+          product_id: item.product_id,
+          quantity: item.quantity,
+          price_at_sale: item.price_at_sale,
+        })),
       })
 
-      const stockUpdateResults = await Promise.all(stockUpdatePromises)
-      const stockUpdateError = stockUpdateResults.find((res) => res.error)
-      if (stockUpdateError) throw new Error(`Fallo al actualizar stock: ${stockUpdateError.error?.message}`)
-
-      await fetchSales()
-      await fetchProductos()
-
-      return saleData
+      if (rpcError) {
+        // El error de la función de base de datos será mucho más específico.
+        // Por ejemplo, si falla una restricción de clave foránea o un trigger.
+        throw rpcError
+      }
+      console.log("Venta procesada exitosamente.")
     } catch (err: any) {
-      console.error("Error completo al procesar la venta:", err)
-      const errorMessage = err?.message || "Ocurrió un error inesperado al procesar la venta."
-      setError(new Error(errorMessage))
-      throw new Error(errorMessage)
+      setError(err)
+      console.error("Error inesperado al registrar la venta:", err)
+      throw err // Relanzamos el error para que el componente lo pueda capturar
     } finally {
       setLoading(false)
     }
-  }
+  }, [userId])
 
-  return { sales, addSale, loading, error, fetchSales }
+  return {
+    addSale, loading, error
+  }
 }

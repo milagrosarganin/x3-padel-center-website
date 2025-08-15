@@ -1,10 +1,9 @@
 "use client"
 
 import { useState, useEffect, useCallback } from "react"
-import { createClient } from "@/lib/supabase"
+import { supabase } from "@/lib/supabase" // Asumiendo consistencia con otros hooks
 import { useToast } from "@/hooks/use-toast"
 import { useAuth } from "@/hooks/use-auth"
-import { Proveedores } from "@/components/proveedores"
 
 export interface Producto {
   id: string
@@ -14,16 +13,25 @@ export interface Producto {
   precio_venta: number
   precio_costo: number
   stock_actual: number
-  stock_minimo?: number
-  categoria?: string
-  proveedores?: string
+  stock_minimo: number
+  categoria: string
+  proveedor: string
   created_at: string
   updated_at: string
 }
 
+export type NuevoProducto = Omit<
+  Producto,
+  "id" | "user_id" | "created_at" | "updated_at"
+>
+
+export type ProductoActualizado = Partial<NuevoProducto>
 
 export function useProductos() {
-  const supabase = createClient()
+  // Inconsistencia: Algunos hooks usan createClient() y otros importan supabase directamente.
+  // Estandarizar a uno. Usaré la importación directa para ser consistente con use-mesas.
+  // const supabase = createClient()
+
   const { user } = useAuth()
   const { toast } = useToast()
 
@@ -36,137 +44,123 @@ export function useProductos() {
       setLoading(false)
       return
     }
+
     setLoading(true)
     setError(null)
 
-    const { data, error: fetchError } = await supabase
-      .from("productos")
-      .select("*")
-      .eq("user_id", user.id)
-      .order("nombre", { ascending: true })
+    try {
+      const { data, error: fetchError } = await supabase
+        .from("productos")
+        .select("*")
+        .eq("user_id", user.id)
+        .order("nombre", { ascending: true })
 
-    if (fetchError) {
-      setError(fetchError)
-      toast({
-        title: "Error al cargar productos",
-        variant: "destructive",
-      })
-    } else {
+      if (fetchError) throw fetchError
+
       setProductos(data || [])
+    } catch (err: any) {
+      setError(err)
+      console.error("Error al cargar productos:", err.message)
+      // Dejar que el componente decida si mostrar un toast
+    } finally {
+      setLoading(false)
     }
-
-    setLoading(false)
-  }, [supabase, user, toast])
+  }, [user]) // supabase y toast no son dependencias si se definen fuera o no cambian.
 
   useEffect(() => {
     fetchProductos()
   }, [fetchProductos])
 
-    const addProducto = async (
-    newProducto: {
-      nombre: string
-      precio_venta: number
-      precio_costo: number
-      stock_actual: number
-      categoria?: string
-      proveedores?: string
-    }
-  ) => {
-    if (!user) {
-      toast({
-        title: "Error: Debes iniciar sesión para agregar un producto.",
-        variant: "destructive",
-      })
-      return
-    }
+  const addProducto = async (newProducto: NuevoProducto) => {
+    if (!user) throw new Error("Usuario no autenticado.")
 
-    const { data, error: insertError } = await supabase.from("productos").insert([{
-      user_id: user.id,
-      nombre: newProducto.nombre,
-      precio_venta: newProducto.precio_venta,         // O podés renombrar a precio_venta directamente
-      precio_costo: newProducto.precio_costo,   // ✅ Campo nuevo
-      stock_actual: newProducto.stock_actual,
-      categoria: newProducto.categoria,
-      proveedores: newProducto.proveedores,
-    }])
+    setLoading(true)
+    try {
+      const { data, error: insertError } = await supabase
+        .from("productos")
+        .insert({ ...newProducto, user_id: user.id })
+        .select()
+        .single()
 
-    if (insertError) {
-      throw insertError
+      if (insertError) throw insertError
+
+      // Actualizar estado local en lugar de refetch
+      setProductos((prev) => [data, ...prev])
+      return data
+    } catch (err: any) {
+      setError(err)
+      console.error("Error al agregar producto:", err.message)
+      throw err // Relanzar para que el componente lo maneje
+    } finally {
+      setLoading(false)
     }
-
-    await fetchProductos()
-    return data
   }
 
+  const updateProducto = async (id: string, updated: ProductoActualizado) => {
+    if (!user) throw new Error("Usuario no autenticado.")
+
+    setLoading(true)
+    try {
+      const { data, error: updateError } = await supabase
+        .from("productos")
+        .update({ ...updated, updated_at: new Date().toISOString() })
+        .eq("id", id)
+        .eq("user_id", user.id)
+        .select()
+        .single()
+
+      if (updateError) throw updateError
+
+      // Actualizar estado local
+      setProductos((prev) => prev.map((p) => (p.id === id ? data : p)))
+      return data
+    } catch (err: any) {
+      setError(err)
+      console.error("Error al actualizar producto:", err.message)
+      throw err
+    } finally {
+      setLoading(false)
+    }
+  }
 
   const updateProductoStock = async (id: string, newStock: number) => {
-    const { error: updateError } = await supabase
-      .from("productos")
-      .update({ stock_actual: newStock })
-      .eq("id", id)
-
-    if (updateError) {
-      throw updateError
-    }
-
-    await fetchProductos()
-    return true
+    // Esta función es un caso específico de updateProducto.
+    // Se puede mantener por conveniencia o eliminarla y usar updateProducto.
+    return updateProducto(id, { stock_actual: newStock })
   }
 
   const deleteProducto = async (id: string) => {
-    const { error: deleteError } = await supabase
-      .from("productos")
-      .delete()
-      .eq("id", id)
+    if (!user) throw new Error("Usuario no autenticado.")
 
-    if (deleteError) {
-      throw deleteError
+    setLoading(true)
+    try {
+      const { error: deleteError } = await supabase
+        .from("productos")
+        .delete()
+        .eq("id", id)
+        .eq("user_id", user.id)
+
+      if (deleteError) throw deleteError
+
+      // Actualizar estado local
+      setProductos((prev) => prev.filter((p) => p.id !== id))
+    } catch (err: any) {
+      setError(err)
+      console.error("Error al eliminar producto:", err.message)
+      throw err
+    } finally {
+      setLoading(false)
     }
-
-    await fetchProductos()
-    return true
   }
-
-    const updateProducto = async (
-    id: string,
-    updated: {
-      nombre: string
-      precio_venta: number
-      precio_costo: number
-      stock_actual: number
-      categoria?: string
-      proveedores?: string
-    }
-  ) => {
-    const { error: updateError } = await supabase
-      .from("productos")
-      .update({
-        nombre: updated.nombre,
-        precio_venta: updated.precio_venta,
-        precio_costo: updated.precio_costo,
-        stock_actual: updated.stock_actual,
-        categoria: updated.categoria,
-        proveedores: updated.proveedores,
-      })
-      .eq("id", id)
-
-    if (updateError) {
-      throw updateError
-    }
-
-    await fetchProductos()
-    return true
-  }
-
 
   return {
     productos,
     loading,
     error,
     addProducto,
+    updateProducto,
     updateProductoStock,
     deleteProducto,
     fetchProductos,
-    updateProducto,
   }
 }
